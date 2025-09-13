@@ -15,8 +15,10 @@ Simple usage:
     program.set_execution_params({...})
     
     # Client handles MPC network communication  
-    client = StoffelMPCClient({"program_id": "secure_add", ...})
-    result = await client.execute_program_with_inputs({"a": 25, "b": 17})
+    client = StoffelClient({"program_id": "secure_add", ...})
+    result = await client.execute_with_inputs(
+        secret_inputs={"a": 25, "b": 17}
+    )
 """
 
 __version__ = "0.1.0"
@@ -24,7 +26,7 @@ __author__ = "Stoffel Labs"
 
 # Main API - Clean separation of concerns
 from .program import StoffelProgram, compile_stoffel_program
-from .client import StoffelMPCClient
+from .client import StoffelClient
 
 # Core components for advanced usage
 from .compiler import StoffelCompiler, CompiledProgram
@@ -34,7 +36,7 @@ from .mpc import MPCConfig, MPCProtocol
 __all__ = [
     # Main API (recommended for most users)
     "StoffelProgram",         # VM: compilation, loading, execution params
-    "StoffelMPCClient",       # Client: network communication, private data
+    "StoffelClient",          # Client: network communication, private data
     "compile_stoffel_program", # Convenience function for compilation
     
     # Core components for advanced usage

@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class StoffelMPCClient:
+class StoffelClient:
     """
     Client for Stoffel MPC network operations
     
@@ -27,7 +27,7 @@ class StoffelMPCClient:
     
     def __init__(self, network_config: Dict[str, Any]):
         """
-        Initialize MPC network client
+        Initialize Stoffel client for MPC network operations
         
         Args:
             network_config: Configuration for connecting to MPC network
@@ -61,7 +61,9 @@ class StoffelMPCClient:
             raise ValueError("program_id must be specified - MPC network runs a specific program")
         
         self.connected = False
-        self.private_inputs = {}
+        self.private_inputs = {}  # Legacy support
+        self.secret_inputs = {}   # New: explicitly secret inputs 
+        self.public_inputs = {}   # New: explicitly public inputs
         self.session_id = None
         
         logger.info(f"Initialized MPC client {self.client_id} for program {self.program_id}")
@@ -109,13 +111,51 @@ class StoffelMPCClient:
     
     def set_private_inputs(self, inputs: Dict[str, Any]) -> None:
         """
-        Set multiple private inputs at once
+        Set multiple private inputs at once (legacy method)
         
         Args:
             inputs: Dictionary mapping input names to private values
         """
         self.private_inputs.update(inputs)
         logger.debug(f"Set {len(inputs)} private inputs")
+    
+    def set_secret_input(self, name: str, value: Any) -> None:
+        """
+        Set a secret input that will be secret shared across MPC nodes
+        
+        Args:
+            name: Identifier for the secret input
+            value: The secret value to be shared
+        """
+        self.secret_inputs[name] = value
+        logger.debug(f"Set secret input '{name}' = <hidden>")
+    
+    def set_public_input(self, name: str, value: Any) -> None:
+        """
+        Set a public input that will be visible to all MPC nodes
+        
+        Args:
+            name: Identifier for the public input  
+            value: The public value (visible to all nodes)
+        """
+        self.public_inputs[name] = value
+        logger.debug(f"Set public input '{name}' = {value}")
+    
+    def set_inputs(self, secret_inputs: Optional[Dict[str, Any]] = None, 
+                   public_inputs: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Set multiple secret and public inputs at once
+        
+        Args:
+            secret_inputs: Dictionary mapping input names to secret values
+            public_inputs: Dictionary mapping input names to public values
+        """
+        if secret_inputs:
+            self.secret_inputs.update(secret_inputs)
+            logger.debug(f"Set {len(secret_inputs)} secret inputs")
+        if public_inputs:
+            self.public_inputs.update(public_inputs)
+            logger.debug(f"Set {len(public_inputs)} public inputs: {list(public_inputs.keys())}")
     
     async def execute_program(self, inputs: Optional[Dict[str, Any]] = None) -> Any:
         """
@@ -137,23 +177,47 @@ class StoffelMPCClient:
         if inputs:
             self.private_inputs.update(inputs)
         
-        if not self.private_inputs:
-            raise ValueError("No private inputs provided. Use set_private_data() or pass inputs.")
+        # Check if we have any inputs (legacy private_inputs or new secret/public inputs)
+        has_legacy_inputs = bool(self.private_inputs)
+        has_new_inputs = bool(self.secret_inputs) or bool(self.public_inputs)
+        
+        if not (has_legacy_inputs or has_new_inputs):
+            raise ValueError("No inputs provided. Use set_secret_input(), set_public_input(), or legacy methods.")
         
         try:
-            logger.info(f"Executing program {self.program_id} with private inputs")
+            logger.info(f"Executing program {self.program_id} with inputs")
             
-            # Secret share the private inputs
-            secret_shares = {}
-            for name, value in self.private_inputs.items():
-                shares = await self._create_secret_shares(value)
-                secret_shares[name] = shares
-                logger.debug(f"Created secret shares for '{name}'")
+            # Handle different input types
+            all_secret_shares = {}
+            all_public_data = {}
             
-            # Send shares to MPC network nodes
-            execution_id = await self._send_shares_to_nodes(secret_shares)
+            # Legacy private inputs (treat as secret)
+            if self.private_inputs:
+                logger.debug("Processing legacy private inputs as secret")
+                for name, value in self.private_inputs.items():
+                    shares = await self._create_secret_shares(value)
+                    all_secret_shares[name] = shares
+                    logger.debug(f"Created secret shares for legacy input '{name}'")
             
-            logger.info(f"Private data sent to MPC network, execution ID: {execution_id}")
+            # New explicit secret inputs
+            if self.secret_inputs:
+                logger.debug("Processing explicit secret inputs")
+                for name, value in self.secret_inputs.items():
+                    shares = await self._create_secret_shares(value)
+                    all_secret_shares[name] = shares
+                    logger.debug(f"Created secret shares for secret input '{name}'")
+            
+            # New explicit public inputs (no secret sharing needed)
+            if self.public_inputs:
+                logger.debug("Processing explicit public inputs")
+                for name, value in self.public_inputs.items():
+                    all_public_data[name] = value
+                    logger.debug(f"Prepared public input '{name}' = {value}")
+            
+            # Send data to MPC network nodes
+            execution_id = await self._send_data_to_nodes(all_secret_shares, all_public_data)
+            
+            logger.info(f"Data sent to MPC network, execution ID: {execution_id}")
             
             # Wait for computation completion and collect result shares from nodes
             result_shares_from_nodes = await self._collect_result_shares_from_nodes(execution_id)
@@ -236,6 +300,38 @@ class StoffelMPCClient:
             await asyncio.sleep(0.05)  # Simulate connection time
             logger.debug(f"Connected to MPC network node: {node_url}")
     
+    async def _send_data_to_nodes(self, secret_shares: Dict[str, List[bytes]], 
+                                  public_data: Dict[str, Any]) -> str:
+        """
+        Send secret shares and public data to each MPC node
+        
+        Args:
+            secret_shares: Dictionary of secret shares to distribute
+            public_data: Dictionary of public data (visible to all nodes)
+            
+        Returns:
+            Execution ID for tracking this computation
+        """
+        execution_id = f"exec_{self.program_id}_{self.session_id}"
+        
+        # Send data to each node
+        for i, node_url in enumerate(self.node_urls):
+            node_shares = {}
+            
+            # Each node gets different secret shares
+            for name, shares_list in secret_shares.items():
+                if i < len(shares_list):
+                    node_shares[name] = shares_list[i]
+            
+            # All nodes get the same public data
+            node_public_data = public_data.copy()
+            
+            # Send this node's shares and public data
+            await self._send_data_to_node(node_url, execution_id, node_shares, node_public_data)
+            logger.debug(f"Sent data to node {i+1}: {node_url}")
+        
+        return execution_id
+    
     async def _send_shares_to_nodes(self, secret_shares: Dict[str, List[bytes]]) -> str:
         """
         Send secret shares to each MPC node
@@ -261,9 +357,32 @@ class StoffelMPCClient:
         
         return execution_id
     
+    async def _send_data_to_node(self, node_url: str, execution_id: str, 
+                                 shares: Dict[str, bytes], public_data: Dict[str, Any]) -> None:
+        """
+        Send shares and public data to a specific MPC node
+        
+        Args:
+            node_url: URL of the MPC node
+            execution_id: Execution ID
+            shares: Secret shares to send to this node
+            public_data: Public data visible to this node
+        """
+        # This would make actual HTTP/network call to the node
+        await asyncio.sleep(0.1)  # Simulate network time
+        
+        # Skeleton: When backend supports public/secret distinction, this would send:
+        # response = await http_client.post(f"{node_url}/execute", {
+        #     "execution_id": execution_id,
+        #     "program_id": self.program_id,
+        #     "client_id": self.client_id,
+        #     "secret_shares": shares,      # Only this node's shares
+        #     "public_inputs": public_data  # Same for all nodes
+        # })
+    
     async def _send_shares_to_node(self, node_url: str, execution_id: str, shares: Dict[str, bytes]) -> None:
         """
-        Send shares to a specific MPC node
+        Send shares to a specific MPC node (legacy method)
         
         Args:
             node_url: URL of the MPC node
@@ -376,7 +495,7 @@ class StoffelMPCClient:
     
     async def execute_program_with_inputs(self, inputs: Dict[str, Any]) -> Any:
         """
-        Convenience method: set inputs and execute program in one call
+        Convenience method: set inputs and execute program in one call (legacy)
         
         Args:
             inputs: Private inputs for this client
@@ -387,14 +506,30 @@ class StoffelMPCClient:
         self.set_private_inputs(inputs)
         return await self.execute_program()
     
+    async def execute_with_inputs(self, secret_inputs: Optional[Dict[str, Any]] = None,
+                                  public_inputs: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        Execute program with explicit secret and public inputs in one call
+        
+        Args:
+            secret_inputs: Dictionary mapping input names to secret values
+            public_inputs: Dictionary mapping input names to public values
+            
+        Returns:
+            The final computation result
+        """
+        self.set_inputs(secret_inputs, public_inputs)
+        return await self.execute_program()
+    
     def is_ready(self) -> bool:
         """
         Check if the client is ready to execute programs
         
         Returns:
-            True if connected and has private inputs set
+            True if connected and has inputs set (legacy private_inputs or new secret/public inputs)
         """
-        return self.connected and bool(self.private_inputs)
+        has_inputs = bool(self.private_inputs) or bool(self.secret_inputs) or bool(self.public_inputs)
+        return self.connected and has_inputs
     
     def get_program_info(self) -> Dict[str, Any]:
         """
@@ -403,8 +538,13 @@ class StoffelMPCClient:
         Returns:
             Program information
         """
+        # Combine all input types for expected_inputs (for backward compatibility)
+        all_inputs = set(self.private_inputs.keys()) | set(self.secret_inputs.keys()) | set(self.public_inputs.keys())
+        
         return {
             "program_id": self.program_id,
-            "expected_inputs": list(self.private_inputs.keys()),
+            "expected_inputs": list(all_inputs),
+            "secret_inputs": list(self.secret_inputs.keys()),
+            "public_inputs": list(self.public_inputs.keys()),
             "mpc_nodes_available": len(self.node_urls) if self.connected else 0
         }

@@ -11,7 +11,7 @@ A clean, high-level Python SDK for the Stoffel framework, providing easy access 
 The Stoffel Python SDK provides a simple, developer-friendly interface with proper separation of concerns:
 
 - **StoffelProgram**: Handles StoffelLang compilation, VM operations, and execution parameters  
-- **StoffelMPCClient**: Handles MPC network communication, private data, and result reconstruction
+- **StoffelClient**: Handles MPC network communication, public/secret data, and result reconstruction
 
 This SDK enables developers to:
 - Compile and execute StoffelLang programs locally
@@ -61,7 +61,7 @@ pip install stoffel-python-sdk
 
 ```python
 import asyncio
-from stoffel import StoffelProgram, StoffelMPCClient
+from stoffel import StoffelProgram, StoffelClient
 
 async def main():
     # 1. Program Setup (VM handles compilation and parameters)
@@ -70,21 +70,26 @@ async def main():
     program.set_execution_params({
         "computation_id": "secure_addition",
         "function_name": "main",
-        "expected_inputs": ["a", "b"]
+        "expected_inputs": ["a", "b", "threshold"]
     })
     
-    # 2. MPC Client Setup (handles network communication)
-    client = StoffelMPCClient({
+    # 2. Stoffel Client Setup (handles network communication)
+    client = StoffelClient({
         "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
         "client_id": "client_001",
         "program_id": "secure_addition"
     })
     
-    # 3. Execute Secure Computation (one line!)
-    result = await client.execute_program_with_inputs({
-        "a": 25,
-        "b": 17
-    })
+    # 3. Execute with explicit public and secret inputs
+    result = await client.execute_with_inputs(
+        secret_inputs={
+            "a": 25,        # Private: secret-shared across nodes
+            "b": 17         # Private: secret-shared across nodes
+        },
+        public_inputs={
+            "threshold": 50  # Public: visible to all nodes
+        }
+    )
     
     print(f"Secure computation result: {result}")
     await client.disconnect()
@@ -96,21 +101,21 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from stoffel import StoffelMPCClient
+from stoffel import StoffelClient
 
 async def main():
     # One-liner client setup
-    client = StoffelMPCClient({
+    client = StoffelClient({
         "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
         "client_id": "my_client",
         "program_id": "my_secure_program"
     })
     
-    # One-liner execution
-    result = await client.execute_program_with_inputs({
-        "secret_input": 123,
-        "another_input": 456
-    })
+    # One-liner execution with explicit input types
+    result = await client.execute_with_inputs(
+        secret_inputs={"user_data": 123, "private_value": 456},
+        public_inputs={"config_param": 100}
+    )
     
     print(f"Result: {result}")
     await client.disconnect()
@@ -174,16 +179,24 @@ class StoffelProgram:
     def get_program_info(self) -> Dict[str, Any]
 ```
 
-#### `StoffelMPCClient` - Network Operations
+#### `StoffelClient` - Network Operations
 
 ```python
-class StoffelMPCClient:
+class StoffelClient:
     def __init__(self, network_config: Dict[str, Any])
     
-    # Simple API - recommended for most users
-    async def execute_program_with_inputs(self, inputs: Dict[str, Any]) -> Any
+    # Recommended API - explicit public/secret inputs
+    async def execute_with_inputs(self, secret_inputs: Optional[Dict[str, Any]] = None,
+                                  public_inputs: Optional[Dict[str, Any]] = None) -> Any
     
-    # Flexible API for multi-step operations
+    # Individual input methods
+    def set_secret_input(self, name: str, value: Any) -> None
+    def set_public_input(self, name: str, value: Any) -> None
+    def set_inputs(self, secret_inputs: Optional[Dict[str, Any]] = None, 
+                   public_inputs: Optional[Dict[str, Any]] = None) -> None
+    
+    # Legacy API (for backward compatibility)
+    async def execute_program_with_inputs(self, inputs: Dict[str, Any]) -> Any
     def set_private_data(self, name: str, value: Any) -> None
     def set_private_inputs(self, inputs: Dict[str, Any]) -> None
     async def execute_program(self) -> Any
@@ -200,19 +213,25 @@ class StoffelMPCClient:
 
 ```python
 # Direct connection to MPC nodes
-client = StoffelMPCClient({
+client = StoffelClient({
     "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
     "client_id": "your_client_id",
     "program_id": "your_program_id"
 })
 
 # With optional coordinator for metadata exchange
-client = StoffelMPCClient({
+client = StoffelClient({
     "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
     "coordinator_url": "http://coordinator:8080",  # Optional
     "client_id": "your_client_id", 
     "program_id": "your_program_id"
 })
+
+# Usage examples with new API
+await client.execute_with_inputs(
+    secret_inputs={"user_age": 25, "salary": 75000},    # Secret-shared
+    public_inputs={"threshold": 50000, "rate": 0.1}     # Visible to all nodes
+)
 ```
 
 ### Advanced API (For Specialized Use Cases)
@@ -290,11 +309,12 @@ The SDK provides a clean, high-level interface with proper separation of concern
 - Manages execution parameters and local testing
 - Interfaces with StoffelVM for program lifecycle management
 
-**StoffelMPCClient** (`stoffel.client`):  
-- **Responsibility**: MPC network communication, private data, result reconstruction
+**StoffelClient** (`stoffel.client`):  
+- **Responsibility**: MPC network communication, public/secret data handling, result reconstruction
 - Connects directly to MPC nodes (addresses known via deployment)
-- Handles secret sharing and result reconstruction automatically
-- Provides clean API hiding all cryptographic complexity
+- Handles secret sharing for secret inputs and distribution of public inputs
+- Provides clean API with explicit public/secret input distinction
+- Hides all cryptographic complexity while maintaining clear data visibility semantics
 
 **Optional Coordinator Integration**:
 - Used for metadata exchange between client and MPC network orchestration
@@ -342,7 +362,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - ✅ Clean API design with proper separation of concerns
 - ✅ StoffelProgram for compilation and VM operations (skeleton ready for StoffelLang integration)
-- ✅ StoffelMPCClient for network communication (skeleton ready for MPC network integration)  
+- ✅ StoffelClient for network communication (skeleton ready for MPC network integration)  
 - ✅ StoffelVM FFI bindings (ready for integration with libstoffel_vm.so)
 - 🚧 MPC network integration (awaiting actual MPC service infrastructure)
 - 🚧 StoffelLang compiler integration  
