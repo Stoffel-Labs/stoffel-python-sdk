@@ -1,5 +1,5 @@
 """
-Exceptions for StoffelLang compiler integration
+Exceptions for Stoffel compiler integration
 """
 
 from typing import List, Optional
@@ -11,7 +11,7 @@ class CompilerError(Exception):
 
 
 class CompilationError(CompilerError):
-    """Raised when StoffelLang compilation fails"""
+    """Raised when Stoffel compilation fails"""
     
     def __init__(self, message: str, errors: Optional[List[str]] = None):
         super().__init__(message)

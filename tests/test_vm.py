@@ -1,5 +1,5 @@
 """
-Tests for StoffelVM Python bindings
+Tests for Stoffel VM Python bindings
 """
 
 import pytest

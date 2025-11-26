@@ -1,7 +1,7 @@
 """
-Example usage of StoffelVM Python bindings
+Example usage of Stoffel VM Python bindings
 
-This example demonstrates how to use the StoffelVM Python SDK to:
+This example demonstrates how to use the Stoffel VM Python SDK to:
 1. Create a VM instance
 2. Register foreign functions
 3. Execute VM functions
@@ -31,7 +31,7 @@ def string_processor(s: str) -> str:
 
 def main():
     """Main example function"""
-    print("StoffelVM Python SDK Example")
+    print("Stoffel VM Python SDK Example")
     print("=" * 40)
     
     try:
@@ -72,7 +72,7 @@ def main():
         int_val = StoffelValue.integer(123)
         float_val = StoffelValue.float_value(3.14159)
         bool_val = StoffelValue.boolean(True)
-        string_val = StoffelValue.string("Hello, StoffelVM!")
+        string_val = StoffelValue.string("Hello, Stoffel!")
         
         print(f"Unit value: {unit_val}")
         print(f"Integer value: {int_val}")

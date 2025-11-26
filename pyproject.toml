@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "stoffel-python-sdk"
 version = "0.1.0"
-description = "Python SDK for StoffelVM and MPC protocols"
+description = "Python SDK for Stoffel framework and MPC protocols"
 authors = ["Stoffel Labs"]
 readme = "README.md"
 packages = [{include = "stoffel"}]

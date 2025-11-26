@@ -1,31 +1,52 @@
 """
-MPC types and configurations
+MPC types, participants, and configurations
 
-This module provides basic MPC types and configurations that are used
-by the main client and program components.
+This module provides MPC participant classes (Client, Server, Node) and their builders,
+along with basic MPC types and configurations.
+
+Usage:
+    from stoffel.mpc import MPCClient, MPCServer, MPCNode, MPCConfig
 """
 
 from .types import (
-    SecretValue, 
-    MPCResult, 
-    MPCConfig, 
-    MPCProtocol,
+    MPCConfig,
+    StoffelError,
     MPCError,
     ComputationError,
     NetworkError,
-    ConfigurationError
+    ConfigurationError,
+    ProtocolError,
+    PreprocessingError,
+    IoError,
+    InvalidInputError,
+    FunctionNotFoundError,
 )
 
+from .client import MPCClient, MPCClientBuilder
+from .server import MPCServer, MPCServerBuilder
+from .node import MPCNode, MPCNodeBuilder
+
 __all__ = [
-    # Core types for advanced usage
-    "SecretValue",
-    "MPCResult", 
+    # MPC participants
+    "MPCClient",
+    "MPCClientBuilder",
+    "MPCServer",
+    "MPCServerBuilder",
+    "MPCNode",
+    "MPCNodeBuilder",
+
+    # Configuration
     "MPCConfig",
-    "MPCProtocol",
-    
+
     # Exceptions
+    "StoffelError",
     "MPCError",
     "ComputationError",
-    "NetworkError", 
+    "NetworkError",
     "ConfigurationError",
+    "ProtocolError",
+    "PreprocessingError",
+    "IoError",
+    "InvalidInputError",
+    "FunctionNotFoundError",
 ]

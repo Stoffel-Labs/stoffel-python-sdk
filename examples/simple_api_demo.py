@@ -6,92 +6,73 @@ Demonstrates the simplest possible usage of the Stoffel Python SDK.
 Shows the clean, high-level API for basic MPC operations.
 """
 
+import sys
+import os
+
+# Add the parent directory to the path so we can import stoffel
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import asyncio
-from stoffel import StoffelProgram, StoffelMPCClient
+from stoffel import Stoffel, ProtocolType, ShareType
 
 
 async def main():
     print("=== Simple Stoffel API Demo ===\n")
-    
-    # 1. Program setup (handled by VM/StoffelProgram)
-    print("1. Setting up program...")
-    program = StoffelProgram()  # Placeholder - would use real .stfl file
-    print("   ✓ Program compiled and loaded")
-    
-    # 2. Clean MPC client initialization
-    print("\n2. Initializing MPC client...")
-    client = StoffelMPCClient({
-        "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
-        "client_id": "demo_client",
-        "program_id": "secure_addition_demo"
-    })
-    print("   ✓ Client initialized")
-    
-    # 3. Simple execution - all complexity hidden
-    print("\n3. Executing secure computation...")
-    
-    # Option A: Set inputs then execute
-    client.set_private_data("a", 42)
-    client.set_private_data("b", 17)
-    result = await client.execute_program()
-    
-    print(f"   Result: {result}")
-    
-    # Option B: Execute with inputs in one call (even cleaner)
-    print("\n4. One-call execution...")
-    result2 = await client.execute_program_with_inputs({
-        "x": 100,
-        "y": 25
-    })
-    print(f"   Result: {result2}")
-    
-    # 5. Status information (without exposing internals)
-    print("\n5. Status information...")
-    
-    if client.is_ready():
-        print("   ✓ Client is ready")
-    else:
-        print("   ⚠ Client not ready")
-    
-    status = client.get_connection_status()
-    print(f"   Connected: {status['connected']}")
-    print(f"   Program: {status['program_id']}")
-    print(f"   MPC nodes: {status['mpc_nodes_count']}")
-    print(f"   Coordinator: {status['coordinator_url'] or 'Not configured'}")
-    
-    program_info = client.get_program_info()
-    print(f"   Available inputs: {program_info['expected_inputs']}")
-    
-    # 6. Clean disconnection
-    await client.disconnect()
-    print("\n   ✓ Disconnected cleanly")
-    
+
+    # 1. Load bytecode and set up MPC configuration
+    print("1. Setting up program with MPC configuration...")
+
+    # Load pre-compiled bytecode and configure MPC
+    # In production, you would use Stoffel.compile() or Stoffel.compile_file()
+    # but that requires the Stoffel compiler to be installed
+    runtime = (Stoffel.load(b"example_bytecode")
+        .parties(5)
+        .threshold(1)
+        .build())
+
+    print("   Program compiled and MPC configured")
+    print(f"   MPC config: {runtime.mpc_config()}")
+
+    # 2. Create MPC participants
+    print("\n2. Creating MPC participants...")
+
+    # Create a client (input provider)
+    client = (runtime.client(100)
+        .with_inputs([42, 17])
+        .build())
+
+    print(f"   Client created with ID: {client.client_id}")
+    print(f"   Inputs: {client.inputs}")
+
+    # Create servers (compute nodes)
+    servers = []
+    for party_id in range(5):
+        server = runtime.server(party_id).build()
+        servers.append(server)
+        print(f"   Server {party_id} created")
+
+    # 3. Show configuration
+    print("\n3. Configuration details...")
+    print(f"   Client config: {client.config()}")
+    print(f"   Server 0 config: {servers[0].config()}")
+
     print("\n=== Demo Complete ===")
+    print("\nNote: Actual MPC execution requires PyO3 bindings (coming soon)")
 
 
-async def even_simpler_example():
+async def quick_local_test():
     """
-    Ultra-simple example for basic use cases
+    Quick local execution for testing (no MPC)
     """
-    print("\n=== Ultra-Simple Example ===")
-    
-    # One-liner client setup
-    client = StoffelMPCClient({
-        "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
-        "client_id": "simple_client", 
-        "program_id": "my_secure_program"
-    })
-    
-    # One-liner execution
-    result = await client.execute_program_with_inputs({
-        "secret_input": 123,
-        "another_input": 456
-    })
-    
-    print(f"Secure computation result: {result}")
-    
-    # Clean up
-    await client.disconnect()
+    print("\n=== Quick Local Test ===")
+
+    # For testing, you can skip MPC config and execute locally
+    # Note: This requires PyO3 bindings which are not yet available
+    try:
+        result = Stoffel.load(b"example_bytecode").execute_local()
+        print(f"Local result: {result}")
+    except NotImplementedError as e:
+        print(f"Note: {e}")
 
 
 def show_api_design():
@@ -99,36 +80,71 @@ def show_api_design():
     Show the clean API design principles
     """
     print("\n=== Clean API Design ===")
-    
-    print("\nDeveloper-Facing Methods (Public API):")
-    print("✓ StoffelMPCClient(config)           - Simple initialization")
-    print("✓ set_private_data(name, value)      - Set individual input")
-    print("✓ set_private_inputs(inputs)         - Set multiple inputs")  
-    print("✓ execute_program()                  - Execute with set inputs")
-    print("✓ execute_program_with_inputs(...)   - One-call execution")
-    print("✓ is_ready()                         - Simple status check")
-    print("✓ get_connection_status()            - High-level status")
-    print("✓ get_program_info()                 - Program information")
-    print("✓ disconnect()                       - Clean shutdown")
-    
-    print("\nHidden Implementation (Private Methods):")
-    print("- _discover_mpc_nodes_from_coordinator()")
-    print("- _register_with_coordinator()")
-    print("- _connect_to_mpc_nodes()")
-    print("- _create_secret_shares()")
-    print("- _send_shares_to_nodes()")
-    print("- _collect_result_shares_from_nodes()")
-    print("- _reconstruct_final_result()")
-    
-    print("\nBenefits:")
-    print("✓ Simple, intuitive API")
-    print("✓ All complexity hidden")
-    print("✓ Easy to use correctly")
-    print("✓ Hard to use incorrectly")
-    print("✓ Clean separation of concerns")
+
+    print("\nStoffel Entry Point:")
+    print("  Stoffel.compile(source)     - Compile from string")
+    print("  Stoffel.compile_file(path)  - Compile from file")
+    print("  Stoffel.load(bytecode)      - Load pre-compiled bytecode")
+
+    print("\nBuilder Pattern Methods:")
+    print("  .parties(n)                 - Set number of MPC parties")
+    print("  .threshold(t)               - Set fault tolerance (n >= 3t+1)")
+    print("  .instance_id(id)            - Set computation instance ID")
+    print("  .protocol(ProtocolType)     - Set MPC protocol")
+    print("  .share_type(ShareType)      - Set secret sharing scheme")
+    print("  .build()                    - Build StoffelRuntime")
+    print("  .execute_local()            - Quick local execution")
+
+    print("\nStoffelRuntime Methods:")
+    print("  .program()                  - Get the compiled Program")
+    print("  .client(id)                 - Create MPCClientBuilder")
+    print("  .server(party_id)           - Create MPCServerBuilder")
+    print("  .node(party_id)             - Create MPCNodeBuilder")
+
+    print("\nMPC Participants:")
+    print("  MPCClient   - Input provider (sends shares, receives results)")
+    print("  MPCServer   - Compute node (performs secure computation)")
+    print("  MPCNode     - Combined client + server (peer-to-peer MPC)")
+
+    print("\nKey Design Principles:")
+    print("  ✓ Builder pattern for fluent configuration")
+    print("  ✓ All complexity hidden behind intuitive methods")
+    print("  ✓ HoneyBadger protocol by default (Byzantine fault tolerant)")
+    print("  ✓ Clean separation: Program vs Runtime vs Participants")
+
+
+def show_error_types():
+    """
+    Show available error types
+    """
+    from stoffel import (
+        StoffelError,
+        MPCError,
+        ComputationError,
+        NetworkError,
+        ConfigurationError,
+        ProtocolError,
+        PreprocessingError,
+        IoError,
+        InvalidInputError,
+        FunctionNotFoundError,
+    )
+
+    print("\n=== Exception Hierarchy ===")
+    print("\nStoffelError (base)")
+    print("├── MPCError (MPC-specific errors)")
+    print("│   ├── ComputationError")
+    print("│   ├── NetworkError")
+    print("│   ├── ConfigurationError")
+    print("│   ├── ProtocolError")
+    print("│   └── PreprocessingError")
+    print("├── IoError")
+    print("├── InvalidInputError")
+    print("└── FunctionNotFoundError")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-    asyncio.run(even_simpler_example())
+    asyncio.run(quick_local_test())
     show_api_design()
+    show_error_types()

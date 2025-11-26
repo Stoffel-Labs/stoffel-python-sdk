@@ -4,17 +4,18 @@
 [![PyPI version](https://badge.fury.io/py/stoffel-python-sdk.svg)](https://badge.fury.io/py/stoffel-python-sdk)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-A clean, high-level Python SDK for the Stoffel framework, providing easy access to StoffelLang program compilation and secure multi-party computation (MPC) networks.
+A clean, high-level Python SDK for the Stoffel framework, providing easy access to Stoffel program compilation and secure multi-party computation (MPC) networks.
 
 ## Overview
 
 The Stoffel Python SDK provides a simple, developer-friendly interface with proper separation of concerns:
 
-- **StoffelProgram**: Handles StoffelLang compilation, VM operations, and execution parameters  
-- **StoffelClient**: Handles MPC network communication, public/secret data, and result reconstruction
+- **Stoffel**: Entry point with builder pattern for compilation and configuration
+- **StoffelRuntime**: Holds compiled program and MPC configuration
+- **MPCClient/MPCServer/MPCNode**: MPC participants for different network architectures
 
 This SDK enables developers to:
-- Compile and execute StoffelLang programs locally
+- Compile and execute Stoffel programs locally
 - Connect to MPC networks for secure multi-party computation
 - Manage private data with automatic secret sharing
 - Reconstruct results from distributed computation
@@ -26,8 +27,8 @@ This SDK enables developers to:
 
 - Python 3.8 or higher
 - Poetry (recommended) or pip
-- StoffelVM shared library (`libstoffel_vm.so` or `libstoffel_vm.dylib`)
-- StoffelLang compiler (for compiling `.stfl` programs)
+- Stoffel VM shared library (`libstoffel_vm.so` or `libstoffel_vm.dylib`)
+- Stoffel compiler (for compiling `.stfl` programs)
 
 ### Install with Poetry (Recommended)
 
@@ -60,67 +61,59 @@ pip install stoffel-python-sdk
 ### Simple MPC Computation
 
 ```python
-import asyncio
-from stoffel import StoffelProgram, StoffelClient
+from stoffel import Stoffel, ProtocolType
 
-async def main():
-    # 1. Program Setup (VM handles compilation and parameters)
-    program = StoffelProgram("secure_add.stfl")  # Your StoffelLang program
-    program.compile()
-    program.set_execution_params({
-        "computation_id": "secure_addition",
-        "function_name": "main",
-        "expected_inputs": ["a", "b", "threshold"]
-    })
-    
-    # 2. Stoffel Client Setup (handles network communication)
-    client = StoffelClient({
-        "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
-        "client_id": "client_001",
-        "program_id": "secure_addition"
-    })
-    
-    # 3. Execute with explicit public and secret inputs
-    result = await client.execute_with_inputs(
-        secret_inputs={
-            "a": 25,        # Private: secret-shared across nodes
-            "b": 17         # Private: secret-shared across nodes
-        },
-        public_inputs={
-            "threshold": 50  # Public: visible to all nodes
-        }
-    )
-    
-    print(f"Secure computation result: {result}")
-    await client.disconnect()
+# 1. Compile and configure MPC parameters
+runtime = (Stoffel.compile("main main() -> int64: return 42")
+    .parties(4)              # HoneyBadger MPC requires n >= 3
+    .threshold(1)            # Fault tolerance (n >= 3t+1)
+    .instance_id(42)
+    .protocol(ProtocolType.HONEYBADGER)
+    .build())
 
-asyncio.run(main())
+# 2. Create MPC participants
+# Client provides secret inputs
+client = (runtime.client(100)
+    .with_inputs([25, 17])
+    .build())
+
+# Servers perform the computation
+servers = [
+    runtime.server(i).with_preprocessing(10, 25).build()
+    for i in range(4)
+]
+
+# 3. Access program info
+print(f"Program bytecode: {runtime.program().bytecode()[:20]}...")
+print(f"MPC config: n={runtime.mpc_config()[0]}, t={runtime.mpc_config()[1]}")
 ```
 
-### Even Simpler Usage
+### Peer-to-Peer MPC with Nodes
 
 ```python
-import asyncio
-from stoffel import StoffelClient
+from stoffel import Stoffel
+from stoffel.advanced import NetworkBuilder
 
-async def main():
-    # One-liner client setup
-    client = StoffelClient({
-        "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
-        "client_id": "my_client",
-        "program_id": "my_secure_program"
-    })
-    
-    # One-liner execution with explicit input types
-    result = await client.execute_with_inputs(
-        secret_inputs={"user_data": 123, "private_value": 456},
-        public_inputs={"config_param": 100}
-    )
-    
-    print(f"Result: {result}")
-    await client.disconnect()
+# Setup runtime
+runtime = (Stoffel.load(b"compiled_bytecode")
+    .parties(4)
+    .threshold(1)
+    .build())
 
-asyncio.run(main())
+# Create nodes (each party provides inputs AND computes)
+nodes = []
+for party_id in range(4):
+    node = (runtime.node(party_id)
+        .with_inputs([10 * party_id, 20 * party_id])
+        .with_preprocessing(5, 12)
+        .build())
+    nodes.append(node)
+
+# Configure network topology
+topology = (NetworkBuilder(n_parties=4)
+    .localhost(base_port=19300)
+    .full_mesh()
+    .build())
 ```
 
 ## Examples
@@ -133,23 +126,11 @@ The `examples/` directory contains comprehensive examples:
 poetry run python examples/simple_api_demo.py
 ```
 
-Demonstrates the simplest possible usage:
-- Clean, high-level API for basic MPC operations
-- One-call execution patterns
-- Status checking and client management
-
 ### Complete Architecture Example
 
 ```bash
 poetry run python examples/correct_flow.py
 ```
-
-Shows the complete workflow and proper separation of concerns:
-- StoffelLang program compilation and VM setup
-- MPC network client configuration and execution
-- Local testing vs. MPC network execution
-- Multiple network configuration options
-- Architectural boundaries and responsibilities
 
 ### Advanced VM Operations
 
@@ -157,114 +138,116 @@ Shows the complete workflow and proper separation of concerns:
 poetry run python examples/vm_example.py
 ```
 
-For advanced users needing low-level VM control:
-- Direct StoffelVM Python bindings usage
-- Foreign function registration
-- Value type handling and VM object management
-
 ## API Reference
 
-### Main API (Recommended)
+### Main API
 
-#### `StoffelProgram` - VM Operations
-
-```python
-class StoffelProgram:
-    def __init__(self, source_file: Optional[str] = None)
-    def compile(self, optimize: bool = True) -> str  # Returns compiled binary path
-    def load_program(self) -> None
-    def set_execution_params(self, params: Dict[str, Any]) -> None
-    def execute_locally(self, inputs: Dict[str, Any]) -> Any  # For testing
-    def get_computation_id(self) -> str
-    def get_program_info(self) -> Dict[str, Any]
-```
-
-#### `StoffelClient` - Network Operations
+#### `Stoffel` - Entry Point
 
 ```python
-class StoffelClient:
-    def __init__(self, network_config: Dict[str, Any])
-    
-    # Recommended API - explicit public/secret inputs
-    async def execute_with_inputs(self, secret_inputs: Optional[Dict[str, Any]] = None,
-                                  public_inputs: Optional[Dict[str, Any]] = None) -> Any
-    
-    # Individual input methods
-    def set_secret_input(self, name: str, value: Any) -> None
-    def set_public_input(self, name: str, value: Any) -> None
-    def set_inputs(self, secret_inputs: Optional[Dict[str, Any]] = None, 
-                   public_inputs: Optional[Dict[str, Any]] = None) -> None
-    
-    # Legacy API (for backward compatibility)
-    async def execute_program_with_inputs(self, inputs: Dict[str, Any]) -> Any
-    def set_private_data(self, name: str, value: Any) -> None
-    def set_private_inputs(self, inputs: Dict[str, Any]) -> None
-    async def execute_program(self) -> Any
-    
-    # Status and management
-    def is_ready(self) -> bool
-    def get_connection_status(self) -> Dict[str, Any]
-    def get_program_info(self) -> Dict[str, Any]
-    async def connect(self) -> None
-    async def disconnect(self) -> None
+class Stoffel:
+    @staticmethod
+    def compile(source: str) -> StoffelBuilder
+
+    @staticmethod
+    def compile_file(path: str) -> StoffelBuilder
+
+    @staticmethod
+    def load(bytecode: bytes) -> StoffelBuilder
 ```
 
-#### Network Configuration
+#### `StoffelBuilder` - Configuration
 
 ```python
-# Direct connection to MPC nodes
-client = StoffelClient({
-    "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
-    "client_id": "your_client_id",
-    "program_id": "your_program_id"
-})
-
-# With optional coordinator for metadata exchange
-client = StoffelClient({
-    "nodes": ["http://mpc-node1:9000", "http://mpc-node2:9000", "http://mpc-node3:9000"],
-    "coordinator_url": "http://coordinator:8080",  # Optional
-    "client_id": "your_client_id", 
-    "program_id": "your_program_id"
-})
-
-# Usage examples with new API
-await client.execute_with_inputs(
-    secret_inputs={"user_age": 25, "salary": 75000},    # Secret-shared
-    public_inputs={"threshold": 50000, "rate": 0.1}     # Visible to all nodes
-)
+class StoffelBuilder:
+    def parties(self, n: int) -> StoffelBuilder
+    def threshold(self, t: int) -> StoffelBuilder
+    def instance_id(self, id: int) -> StoffelBuilder
+    def protocol(self, protocol: ProtocolType) -> StoffelBuilder
+    def share_type(self, share_type: ShareType) -> StoffelBuilder
+    def network_config_file(self, path: str) -> StoffelBuilder
+    def build(self) -> StoffelRuntime
 ```
 
-### Advanced API (For Specialized Use Cases)
-
-#### `VirtualMachine` - Low-Level VM Bindings
+#### `StoffelRuntime` - Runtime Access
 
 ```python
-class VirtualMachine:
-    def __init__(self, library_path: Optional[str] = None)
-    def execute(self, function_name: str) -> Any
-    def execute_with_args(self, function_name: str, args: List[Any]) -> Any
-    def register_foreign_function(self, name: str, func: Callable) -> None
-    def register_foreign_object(self, obj: Any) -> int
-    def create_string(self, value: str) -> StoffelValue
+class StoffelRuntime:
+    def program(self) -> Program
+    def client(self, client_id: int) -> MPCClientBuilder
+    def server(self, party_id: int) -> MPCServerBuilder
+    def node(self, party_id: int) -> MPCNodeBuilder
+    def mpc_config(self) -> Tuple[int, int]  # (n_parties, threshold)
 ```
 
-#### `StoffelValue` - VM Value Types
+### MPC Participants
+
+#### `MPCClient` - Input Provider
 
 ```python
-class StoffelValue:
-    @classmethod
-    def unit(cls) -> "StoffelValue"
-    @classmethod 
-    def integer(cls, value: int) -> "StoffelValue"
-    @classmethod
-    def float_value(cls, value: float) -> "StoffelValue"
-    @classmethod
-    def boolean(cls, value: bool) -> "StoffelValue"
-    @classmethod
-    def string(cls, value: str) -> "StoffelValue"
-    
-    def to_python(self) -> Any
+class MPCClientBuilder:
+    def with_inputs(self, inputs: List[Any]) -> MPCClientBuilder
+    def build(self) -> MPCClient
+
+class MPCClient:
+    def generate_input_shares_robust(self) -> List[bytes]
+    def generate_input_shares_non_robust(self) -> List[bytes]
+    def receive_outputs(self, shares: List[bytes]) -> Any
 ```
+
+#### `MPCServer` - Compute Node
+
+```python
+class MPCServerBuilder:
+    def with_preprocessing(self, triples: int, randoms: int) -> MPCServerBuilder
+    def build(self) -> MPCServer
+
+class MPCServer:
+    def run_preprocessing(self) -> None
+    def receive_client_inputs(self, client_id: int, shares: List[bytes]) -> None
+    def compute(self, bytecode: bytes) -> List[bytes]
+    def add_peer(self, peer_id: int, address: str) -> None
+```
+
+#### `MPCNode` - Combined Client+Server
+
+```python
+class MPCNodeBuilder:
+    def with_inputs(self, inputs: List[Any]) -> MPCNodeBuilder
+    def with_preprocessing(self, triples: int, randoms: int) -> MPCNodeBuilder
+    def build(self) -> MPCNode
+
+class MPCNode:
+    def run(self, bytecode: bytes) -> Any
+```
+
+### Advanced Module
+
+```python
+from stoffel.advanced import ShareManager, NetworkBuilder
+
+# Low-level secret sharing
+manager = ShareManager(n_parties=4, threshold=1)
+shares = manager.create_shares(42)
+reconstructed = manager.reconstruct(shares)
+
+# Network topology configuration
+topology = (NetworkBuilder(n_parties=4)
+    .localhost(base_port=19200)
+    .full_mesh()
+    .build())
+```
+
+## MPC Protocol Requirements
+
+The Stoffel SDK uses **HoneyBadger MPC** which requires:
+- **Minimum 3 parties** (`n >= 3`)
+- **Byzantine fault tolerance**: `n >= 3t + 1` where `t` is the threshold
+
+Common configurations:
+- `parties(3).threshold(0)` - 3 parties, no fault tolerance
+- `parties(4).threshold(1)` - 4 parties, tolerates 1 fault
+- `parties(7).threshold(2)` - 7 parties, tolerates 2 faults
 
 ## Development
 
@@ -278,7 +261,7 @@ poetry run pytest
 poetry run pytest --cov=stoffel
 
 # Run specific test file
-poetry run pytest tests/test_vm.py
+poetry run pytest tests/test_stoffel.py
 ```
 
 ### Code Quality
@@ -303,42 +286,24 @@ The SDK provides a clean, high-level interface with proper separation of concern
 
 ### Main Components
 
-**StoffelProgram** (`stoffel.program`):
-- **Responsibility**: StoffelLang compilation, VM operations, execution parameters
-- Handles program compilation from `.stfl` to `.stfb`
-- Manages execution parameters and local testing
-- Interfaces with StoffelVM for program lifecycle management
+**Stoffel** - Entry point with builder pattern for compilation and configuration
 
-**StoffelClient** (`stoffel.client`):  
-- **Responsibility**: MPC network communication, public/secret data handling, result reconstruction
-- Connects directly to MPC nodes (addresses known via deployment)
-- Handles secret sharing for secret inputs and distribution of public inputs
-- Provides clean API with explicit public/secret input distinction
-- Hides all cryptographic complexity while maintaining clear data visibility semantics
+**StoffelRuntime** - Holds compiled program and MPC configuration, creates participants
 
-**Optional Coordinator Integration**:
-- Used for metadata exchange between client and MPC network orchestration
-- Not required for MPC node discovery (nodes specified directly)
-- Skeleton implementation for future development
+**Program** - Compiled bytecode with save/load capabilities
 
-### Core Components
-
-**StoffelVM Bindings** (`stoffel.vm`):
-- Uses `ctypes` for FFI to StoffelVM's C API
-- Enhanced with Share types for MPC integration
-- Supports foreign function registration and VM lifecycle management
-
-**MPC Types** (`stoffel.mpc`):
-- Core MPC types and configurations for high-level interface
-- Exception hierarchy for MPC-specific error handling
-- Abstract types that hide protocol implementation details
+**MPC Participants**:
+- `MPCClient`: Input providers with secret sharing
+- `MPCServer`: Compute nodes with preprocessing
+- `MPCNode`: Combined for peer-to-peer architectures
 
 ### Design Principles
 
+- **Builder Pattern**: Fluent API for configuration
 - **Simple Public API**: All internal complexity hidden behind intuitive methods
-- **Generic Field Operations**: Not tied to specific cryptographic curves  
+- **Generic Field Operations**: Not tied to specific cryptographic curves
 - **MPC-as-a-Service**: Client-side interface to MPC networks
-- **Clean Architecture**: Clear boundaries between VM, Client, and Coordinator
+- **Clean Architecture**: Clear boundaries between Program, Client, Server, Node
 
 ## Contributing
 
@@ -358,24 +323,23 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Status
 
-🚧 **This project is under active development**
+**This project is under active development**
 
-- ✅ Clean API design with proper separation of concerns
-- ✅ StoffelProgram for compilation and VM operations (skeleton ready for StoffelLang integration)
-- ✅ StoffelClient for network communication (skeleton ready for MPC network integration)  
-- ✅ StoffelVM FFI bindings (ready for integration with libstoffel_vm.so)
-- 🚧 MPC network integration (awaiting actual MPC service infrastructure)
-- 🚧 StoffelLang compiler integration  
-- 📋 Integration tests with actual shared libraries and MPC networks
+- Stoffel entry point with builder pattern
+- MPCClient, MPCServer, MPCNode participants
+- NetworkConfig with TOML support
+- Advanced module (ShareManager, NetworkBuilder)
+- Stoffel VM FFI bindings
+- MPC network integration (awaiting PyO3 bindings)
 
 ## Related Projects
 
-- [StoffelVM](https://github.com/stoffel-labs/StoffelVM) - The core virtual machine with MPC integration
+- [Stoffel VM](https://github.com/stoffel-labs/stoffel-vm) - The core virtual machine with MPC integration
 - [MPC Protocols](https://github.com/stoffel-labs/mpc-protocols) - Rust implementation of MPC protocols
-- [StoffelLang](https://github.com/stoffel-labs/stoffel-lang) - The programming language that compiles to StoffelVM
+- [Stoffel Lang](https://github.com/stoffel-labs/stoffel-lang) - The programming language that compiles to Stoffel VM
 
 ## Support
 
-- 📖 [Documentation](docs/)
-- 🐛 [Issue Tracker](https://github.com/stoffel-labs/stoffel-python-sdk/issues)
-- 💬 [Discussions](https://github.com/stoffel-labs/stoffel-python-sdk/discussions)
+- [Documentation](docs/)
+- [Issue Tracker](https://github.com/stoffel-labs/stoffel-python-sdk/issues)
+- [Discussions](https://github.com/stoffel-labs/stoffel-python-sdk/discussions)

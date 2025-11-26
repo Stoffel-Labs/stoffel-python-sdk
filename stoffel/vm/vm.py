@@ -1,7 +1,7 @@
 """
-Python bindings for StoffelVM
+Python bindings for Stoffel VM
 
-This module provides a high-level Python interface to StoffelVM through CFFI.
+This module provides a high-level Python interface to the Stoffel VM through CFFI.
 """
 
 import ctypes
@@ -52,18 +52,18 @@ CForeignFunctionType = ctypes.CFUNCTYPE(
 
 class VirtualMachine:
     """
-    Python wrapper for StoffelVM
-    
-    This class provides a high-level interface to StoffelVM, handling
+    Python wrapper for the Stoffel VM
+
+    This class provides a high-level interface to the Stoffel VM, handling
     VM creation, function execution, and foreign function registration.
     """
-    
+
     def __init__(self, library_path: Optional[str] = None):
         """
-        Initialize a new StoffelVM instance
-        
+        Initialize a new Stoffel VM instance
+
         Args:
-            library_path: Path to the StoffelVM shared library.
+            library_path: Path to the Stoffel VM shared library.
                          If None, attempts to find it in standard locations.
         """
         self._load_library(library_path)
@@ -75,7 +75,7 @@ class VirtualMachine:
         self._registered_functions: Dict[str, Callable] = {}
     
     def _load_library(self, library_path: Optional[str]):
-        """Load the StoffelVM shared library"""
+        """Load the Stoffel VM shared library"""
         if library_path:
             self._lib = ctypes.CDLL(library_path)
         else:
@@ -494,7 +494,7 @@ class VirtualMachine:
     
     def load_binary(self, binary_path: str) -> None:
         """
-        Load a compiled StoffelLang binary into the VM
+        Load a compiled Stoffel binary into the VM
         
         Args:
             binary_path: Path to the .stfb binary file

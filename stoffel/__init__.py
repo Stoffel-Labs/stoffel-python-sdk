@@ -1,48 +1,105 @@
 """
 Stoffel Python SDK
 
-A clean Python SDK for the Stoffel framework, providing:
-- StoffelLang program compilation and management
-- MPC network client for secure computations
-- Clear separation of concerns between VM and network operations
+A Python SDK for the Stoffel framework, providing:
+- Stoffel program compilation and management
+- MPC network participants (clients, servers, nodes)
+- Secure multi-party computation with Byzantine fault tolerance
 
-Simple usage:
-    from stoffel import StoffelProgram, StoffelMPCClient
-    
-    # VM handles program compilation and setup
-    program = StoffelProgram("secure_add.stfl")
-    program.compile()
-    program.set_execution_params({...})
-    
-    # Client handles MPC network communication  
-    client = StoffelClient({"program_id": "secure_add", ...})
-    result = await client.execute_with_inputs(
-        secret_inputs={"a": 25, "b": 17}
-    )
+Usage:
+    from stoffel import Stoffel
+
+    # Compile and execute locally
+    result = Stoffel.compile("main main() -> int64:\\n  return 42").execute_local()
+
+    # Compile with MPC configuration
+    runtime = (Stoffel.compile("main main() -> int64:\\n  return 42")
+        .parties(5)
+        .threshold(1)
+        .build())
+
+    # Create MPC participants
+    client = runtime.client(100).with_inputs([10, 20]).build()
+    server = runtime.server(0).build()
 """
 
 __version__ = "0.1.0"
 __author__ = "Stoffel Labs"
 
-# Main API - Clean separation of concerns
-from .program import StoffelProgram, compile_stoffel_program
-from .client import StoffelClient
+# Main API
+from .stoffel import (
+    Stoffel,
+    StoffelRuntime,
+    Program,
+    ProtocolType,
+    ShareType,
+    OptimizationLevel,
+)
 
-# Core components for advanced usage
-from .compiler import StoffelCompiler, CompiledProgram
-from .vm import VirtualMachine
-from .mpc import MPCConfig, MPCProtocol
+# MPC participants and errors
+from .mpc import (
+    MPCClient,
+    MPCClientBuilder,
+    MPCServer,
+    MPCServerBuilder,
+    MPCNode,
+    MPCNodeBuilder,
+    MPCConfig,
+    # Exceptions
+    StoffelError,
+    MPCError,
+    ComputationError,
+    NetworkError,
+    ConfigurationError,
+    ProtocolError,
+    PreprocessingError,
+    IoError,
+    InvalidInputError,
+    FunctionNotFoundError,
+)
+
+# Compiler
+from .compiler import StoffelCompiler, CompilerOptions
+
+# Network configuration
+from .network_config import NetworkConfig, NetworkSettings, MPCSettings
 
 __all__ = [
-    # Main API (recommended for most users)
-    "StoffelProgram",         # VM: compilation, loading, execution params
-    "StoffelClient",          # Client: network communication, private data
-    "compile_stoffel_program", # Convenience function for compilation
-    
-    # Core components for advanced usage
-    "StoffelCompiler", 
-    "CompiledProgram",
-    "VirtualMachine",
+    # Main API
+    "Stoffel",
+    "StoffelRuntime",
+    "Program",
+    "ProtocolType",
+    "ShareType",
+    "OptimizationLevel",
+
+    # MPC participants
+    "MPCClient",
+    "MPCClientBuilder",
+    "MPCServer",
+    "MPCServerBuilder",
+    "MPCNode",
+    "MPCNodeBuilder",
     "MPCConfig",
-    "MPCProtocol",
+
+    # Compiler
+    "StoffelCompiler",
+    "CompilerOptions",
+
+    # Network configuration
+    "NetworkConfig",
+    "NetworkSettings",
+    "MPCSettings",
+
+    # Exceptions
+    "StoffelError",
+    "MPCError",
+    "ComputationError",
+    "NetworkError",
+    "ConfigurationError",
+    "ProtocolError",
+    "PreprocessingError",
+    "IoError",
+    "InvalidInputError",
+    "FunctionNotFoundError",
 ]

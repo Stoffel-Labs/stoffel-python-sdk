@@ -9,14 +9,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `poetry run pytest` - Run tests
 - `poetry run pytest --cov=stoffel` - Run tests with coverage
 - `poetry run black stoffel/ tests/ examples/` - Format code
-- `poetry run isort stoffel/ tests/ examples/` - Sort imports  
+- `poetry run isort stoffel/ tests/ examples/` - Sort imports
 - `poetry run flake8 stoffel/ tests/ examples/` - Lint code
 - `poetry run mypy stoffel/` - Type check
 
 ### Example Commands
 - `poetry run python examples/simple_api_demo.py` - Run simple API demonstration
 - `poetry run python examples/correct_flow.py` - Run complete architecture example
-- `poetry run python examples/vm_example.py` - Run StoffelVM low-level bindings example
+- `poetry run python examples/vm_example.py` - Run Stoffel VM low-level bindings example
 
 ## Architecture
 
@@ -24,88 +24,110 @@ This Python SDK provides a clean, high-level interface for the Stoffel framework
 
 ### Main API Components
 
-**StoffelProgram** (`stoffel/program.py`):
-- Handles StoffelLang program compilation and VM operations
-- Manages execution parameters and local testing
-- VM responsibility: compilation, loading, program lifecycle
+**Stoffel** (`stoffel/stoffel.py`):
+- Entry point for the SDK using builder pattern
+- `Stoffel.compile(source)` / `Stoffel.compile_file(path)` / `Stoffel.load(bytecode)`
+- Returns `StoffelBuilder` for configuration chaining
 
-**StoffelMPCClient** (`stoffel/client.py`):
-- Handles MPC network communication and private data management  
-- Manages secret sharing, result reconstruction, network connections
-- Client responsibility: network communication, private data, MPC operations
+**StoffelBuilder** (`stoffel/stoffel.py`):
+- Configures MPC parameters: `parties()`, `threshold()`, `instance_id()`, `protocol()`, `share_type()`
+- `build()` returns `StoffelRuntime`
+
+**StoffelRuntime** (`stoffel/stoffel.py`):
+- Access to compiled program via `program()`
+- Creates MPC participants: `client(id)`, `server(id)`, `node(id)`
+
+**MPC Participants** (`stoffel/mpc/`):
+- `MPCClient`: Input providers with secret sharing
+- `MPCServer`: Compute nodes with preprocessing
+- `MPCNode`: Combined client+server for peer-to-peer MPC
 
 ### Clean Separation of Concerns
 
-- **VM/Program**: Compilation, execution parameters, local program execution
-- **Client/Network**: MPC communication, secret sharing, result reconstruction  
-- **Coordinator** (optional): MPC orchestration and metadata exchange (not node discovery)
+- **Program**: Compilation, bytecode management, local execution
+- **Client**: Input provision, secret sharing, output reception
+- **Server**: Preprocessing, computation, networking
+- **Node**: Combined client+server for P2P architectures
 
-### Core Components (`stoffel/vm/`, `stoffel/mpc/`)
+### Core Components
 
-**StoffelVM Integration**:
-- **vm.py**: VirtualMachine class using ctypes FFI to StoffelVM's C API
-- **types.py**: Enhanced with Share types and ShareType enum for MPC integration
+**Stoffel VM Integration** (`stoffel/vm/`):
+- **vm.py**: VirtualMachine class using ctypes FFI to Stoffel VM's C API
+- **types.py**: Value types including Share types for MPC
 - **exceptions.py**: VM-specific exception hierarchy
-- Uses ctypes to interface with libstoffel_vm shared library
 
-**MPC Types**:
+**MPC Types** (`stoffel/mpc/`):
 - **types.py**: Core MPC types (SecretValue, MPCResult, MPCConfig, etc.)
-- Abstract MPC types for high-level interface
+- **client.py, server.py, node.py**: MPC participant implementations
 - Exception hierarchy for MPC-specific errors
+
+**Advanced Module** (`stoffel/advanced/`):
+- **ShareManager**: Low-level secret sharing operations
+- **NetworkBuilder**: Custom network topology configuration
 
 ## Key Design Principles
 
-1. **Simple Public API**: All internal complexity hidden behind intuitive methods
-2. **Proper Abstractions**: Developers don't need to understand secret sharing schemes or protocol details
-3. **Generic Field Operations**: Not tied to specific cryptographic curves
-4. **MPC-as-a-Service**: Client-side interface to MPC networks rather than full protocol implementation
-5. **Clean Architecture**: Clear boundaries between VM, Client, and optional Coordinator
+1. **Builder Pattern**: Fluent API for configuration
+2. **Simple Public API**: All internal complexity hidden behind intuitive methods
+3. **Proper Abstractions**: Developers don't need to understand secret sharing schemes
+4. **Generic Field Operations**: Not tied to specific cryptographic curves
+5. **MPC-as-a-Service**: Client-side interface to MPC networks
+6. **Clean Architecture**: Clear boundaries between Program, Client, Server, Node
 
 ## Network Architecture
 
-- **Direct Connection**: Client connects directly to known MPC nodes
-- **Coordinator (Optional)**: Used for metadata exchange and MPC network orchestration (not discovery)
-- **MPC Nodes**: Handle actual secure computation on secret shares
-- **Client**: Always knows MPC node addresses directly (deployment responsibility)
+- **Client-Server Model**: Clients provide inputs, servers compute
+- **Peer-to-Peer Model**: All parties provide inputs AND compute (MPCNode)
+- **NetworkConfig**: TOML-based configuration for deployment
+- **NetworkBuilder**: Programmatic network topology creation
 
 ## FFI Integration
 
 The SDK uses ctypes for FFI integration with:
-- `libstoffel_vm.so/.dylib` - StoffelVM C API 
-- Future: `libmpc_protocols.so/.dylib` - MPC protocols (skeleton implementation)
-
-FFI interfaces based on C headers in `~/Documents/Stoffel-Labs/dev/StoffelVM/` and `~/Documents/Stoffel-Labs/dev/mpc-protocols/`.
+- `libstoffel_vm.so/.dylib` - Stoffel VM C API
+- Future: PyO3 bindings for improved performance
 
 ## Project Structure
 
 ```
 stoffel/
-├── __init__.py          # Main API exports (StoffelProgram, StoffelMPCClient)
-├── program.py           # StoffelLang compilation and VM management
-├── client.py            # MPC network client and communication
-├── compiler.py          # StoffelLang compiler interface
-├── vm/                  # StoffelVM Python bindings
+├── __init__.py          # Main API exports
+├── stoffel.py           # Stoffel, StoffelBuilder, StoffelRuntime, Program
+├── network_config.py    # NetworkConfig with TOML support
+├── program.py           # Legacy StoffelProgram (deprecated)
+├── client.py            # Legacy StoffelMPCClient (deprecated)
+├── compiler/            # Stoffel compiler interface
+├── vm/                  # Stoffel VM Python bindings
 │   ├── vm.py           # VirtualMachine class with FFI bindings
-│   ├── types.py        # Enhanced with Share types for MPC
+│   ├── types.py        # Value types including Share types
 │   └── exceptions.py   # VM-specific exceptions
-└── mpc/                # MPC types and configurations
-    └── types.py        # Core MPC types and exceptions
+├── mpc/                 # MPC types and participants
+│   ├── types.py        # Core MPC types and exceptions
+│   ├── client.py       # MPCClient and MPCClientBuilder
+│   ├── server.py       # MPCServer and MPCServerBuilder
+│   └── node.py         # MPCNode and MPCNodeBuilder
+└── advanced/            # Low-level APIs
+    ├── share_manager.py # Manual secret sharing operations
+    └── network_builder.py # Network topology configuration
 
 examples/
-├── README.md           # Examples documentation and architecture overview
-├── simple_api_demo.py  # Minimal usage example (recommended for most users)  
-├── correct_flow.py     # Complete architecture demonstration
+├── README.md           # Examples documentation
+├── simple_api_demo.py  # Minimal usage example
+├── correct_flow.py     # Complete MPC workflow demonstration
 └── vm_example.py       # Advanced VM bindings usage
 
 tests/
-└── test_client.py      # Clean client tests matching final API
+├── test_stoffel.py     # Main API tests
+├── test_mpc.py         # MPC participant tests
+├── test_network_config.py # Network configuration tests
+├── test_advanced.py    # Advanced module tests
+└── test_errors.py      # Exception hierarchy tests
 ```
 
 ## Important Notes
 
-- MPC protocol selection happens via StoffelVM, not direct protocol management
+- MPC protocol selection happens via Stoffel VM, not direct protocol management
 - Secret sharing schemes are completely abstracted from developers
-- Field operations are generic, not tied to specific curves like BLS12-381  
-- Client configuration requires MPC nodes to be specified directly
-- Coordinator interaction is limited to metadata exchange when needed
+- Field operations are generic, not tied to specific curves like BLS12-381
+- HoneyBadger MPC protocol requires n >= 3t + 1 (Byzantine fault tolerance)
 - Examples demonstrate proper separation of concerns and clean API usage

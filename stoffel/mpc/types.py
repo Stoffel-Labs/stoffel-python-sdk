@@ -57,8 +57,8 @@ class SecretValue:
 class MPCFunction:
     """
     Represents a function to be executed in MPC
-    
-    The function is defined in StoffelVM and executed securely
+
+    The function is defined in the Stoffel program and executed securely
     across multiple parties.
     """
     name: str
@@ -121,7 +121,12 @@ class MPCConfig:
         }
 
 
-class MPCError(Exception):
+class StoffelError(Exception):
+    """Base exception for all Stoffel SDK operations"""
+    pass
+
+
+class MPCError(StoffelError):
     """Base exception for MPC operations"""
     pass
 
@@ -143,4 +148,24 @@ class ProtocolError(MPCError):
 
 class ConfigurationError(MPCError):
     """Exception raised for configuration errors"""
+    pass
+
+
+class PreprocessingError(MPCError):
+    """Exception raised when preprocessing material generation fails"""
+    pass
+
+
+class IoError(StoffelError):
+    """Exception raised for I/O operations (file reading/writing, network I/O)"""
+    pass
+
+
+class InvalidInputError(StoffelError):
+    """Exception raised when input validation fails"""
+    pass
+
+
+class FunctionNotFoundError(StoffelError):
+    """Exception raised when a function is not found in the compiled program"""
     pass
