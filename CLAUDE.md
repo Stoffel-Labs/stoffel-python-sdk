@@ -4,19 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-### Development Commands
-- `poetry install` - Install dependencies
-- `poetry run pytest` - Run tests
-- `poetry run pytest --cov=stoffel` - Run tests with coverage
-- `poetry run black stoffel/ tests/ examples/` - Format code
-- `poetry run isort stoffel/ tests/ examples/` - Sort imports
-- `poetry run flake8 stoffel/ tests/ examples/` - Lint code
-- `poetry run mypy stoffel/` - Type check
+### Development Commands (Python-only mode)
+- `pip install -e .` - Install in development mode (Python stubs only)
+- `pytest` - Run tests
+- `pytest --cov=stoffel` - Run tests with coverage
+- `black stoffel/ tests/ examples/` - Format code
+- `isort stoffel/ tests/ examples/` - Sort imports
+- `flake8 stoffel/ tests/ examples/` - Lint code
+- `mypy stoffel/` - Type check
+
+### Development Commands (with native ctypes bindings)
+- `git submodule update --init --recursive` - Initialize git submodules
+- `cd external/stoffel-lang && cargo build --release` - Build compiler library
+- `cd external/stoffel-vm && cargo build --release` - Build VM library
+- `cd external/mpc-protocols && cargo build --release` - Build MPC library
+- `python test_native_bindings.py` - Test native bindings
 
 ### Example Commands
-- `poetry run python examples/simple_api_demo.py` - Run simple API demonstration
-- `poetry run python examples/correct_flow.py` - Run complete architecture example
-- `poetry run python examples/vm_example.py` - Run Stoffel VM low-level bindings example
+- `python examples/simple_api_demo.py` - Run simple API demonstration
+- `python examples/correct_flow.py` - Run complete architecture example
+- `python examples/vm_example.py` - Run Stoffel VM low-level bindings example
 
 ## Architecture
 
@@ -51,8 +58,20 @@ This Python SDK provides a clean, high-level interface for the Stoffel framework
 
 ### Core Components
 
+**Native Bindings** (`stoffel/_core.py` + `stoffel/native/`):
+- Unified interface using ctypes C FFI bindings
+- `is_native_available()` checks if native bindings are loaded
+- `get_binding_method()` returns 'ctypes' or None
+
+**ctypes C FFI Bindings** (`stoffel/native/`):
+- **compiler.py**: NativeCompiler using stoffellang.h C API
+- **vm.py**: NativeVM using stoffel_vm.h C API (requires cffi module export)
+- **mpc.py**: NativeShareManager using MPC protocols C FFI
+- Uses pre-built shared libraries from `external/` submodules
+- Build libraries with `cargo build --release` in each external/ subdirectory
+
 **Stoffel VM Integration** (`stoffel/vm/`):
-- **vm.py**: VirtualMachine class using ctypes FFI to Stoffel VM's C API
+- **vm.py**: VirtualMachine class (legacy ctypes FFI, deprecated)
 - **types.py**: Value types including Share types for MPC
 - **exceptions.py**: VM-specific exception hierarchy
 
@@ -73,6 +92,7 @@ This Python SDK provides a clean, high-level interface for the Stoffel framework
 4. **Generic Field Operations**: Not tied to specific cryptographic curves
 5. **MPC-as-a-Service**: Client-side interface to MPC networks
 6. **Clean Architecture**: Clear boundaries between Program, Client, Server, Node
+7. **Graceful Degradation**: Works without native bindings (limited functionality)
 
 ## Network Architecture
 
@@ -81,47 +101,49 @@ This Python SDK provides a clean, high-level interface for the Stoffel framework
 - **NetworkConfig**: TOML-based configuration for deployment
 - **NetworkBuilder**: Programmatic network topology creation
 
-## FFI Integration
+## External Dependencies
 
-The SDK uses ctypes for FFI integration with:
-- `libstoffel_vm.so/.dylib` - Stoffel VM C API
-- Future: PyO3 bindings for improved performance
+The SDK uses git submodules for native Rust libraries (`external/`):
+- `stoffel-lang` - Stoffel language compiler (exposes C FFI via `stoffellang.h`)
+- `stoffel-vm` - Virtual machine runtime (has C FFI in `cffi.rs`, needs export)
+- `mpc-protocols` - MPC protocol implementations (exposes C FFI for secret sharing)
+- `stoffel-networking` - QUIC networking layer
 
 ## Project Structure
 
 ```
-stoffel/
-├── __init__.py          # Main API exports
-├── stoffel.py           # Stoffel, StoffelBuilder, StoffelRuntime, Program
-├── network_config.py    # NetworkConfig with TOML support
-├── program.py           # Legacy StoffelProgram (deprecated)
-├── client.py            # Legacy StoffelMPCClient (deprecated)
-├── compiler/            # Stoffel compiler interface
-├── vm/                  # Stoffel VM Python bindings
-│   ├── vm.py           # VirtualMachine class with FFI bindings
-│   ├── types.py        # Value types including Share types
-│   └── exceptions.py   # VM-specific exceptions
-├── mpc/                 # MPC types and participants
-│   ├── types.py        # Core MPC types and exceptions
-│   ├── client.py       # MPCClient and MPCClientBuilder
-│   ├── server.py       # MPCServer and MPCServerBuilder
-│   └── node.py         # MPCNode and MPCNodeBuilder
-└── advanced/            # Low-level APIs
-    ├── share_manager.py # Manual secret sharing operations
-    └── network_builder.py # Network topology configuration
-
-examples/
-├── README.md           # Examples documentation
-├── simple_api_demo.py  # Minimal usage example
-├── correct_flow.py     # Complete MPC workflow demonstration
-└── vm_example.py       # Advanced VM bindings usage
-
-tests/
-├── test_stoffel.py     # Main API tests
-├── test_mpc.py         # MPC participant tests
-├── test_network_config.py # Network configuration tests
-├── test_advanced.py    # Advanced module tests
-└── test_errors.py      # Exception hierarchy tests
+stoffel-python-sdk/
+├── pyproject.toml       # Python package configuration
+├── .gitmodules          # Git submodule definitions
+├── external/            # Git submodules (Rust dependencies)
+│   ├── stoffel-lang/
+│   ├── stoffel-vm/
+│   ├── mpc-protocols/
+│   └── stoffel-networking/
+├── stoffel/             # Python package
+│   ├── __init__.py     # Main API exports
+│   ├── _core.py        # Native bindings wrapper (with fallback)
+│   ├── stoffel.py      # Stoffel, StoffelBuilder, StoffelRuntime, Program
+│   ├── network_config.py
+│   ├── native/         # ctypes C FFI bindings
+│   │   ├── __init__.py
+│   │   ├── compiler.py # NativeCompiler
+│   │   ├── vm.py       # NativeVM
+│   │   └── mpc.py      # NativeShareManager
+│   ├── compiler/       # Stoffel compiler interface
+│   ├── vm/             # Stoffel VM Python bindings (legacy)
+│   ├── mpc/            # MPC types and participants
+│   └── advanced/       # Low-level APIs
+├── examples/
+│   ├── simple_api_demo.py
+│   ├── correct_flow.py
+│   └── vm_example.py
+└── tests/
+    ├── test_stoffel.py
+    ├── test_mpc.py
+    ├── test_network_config.py
+    ├── test_advanced.py
+    └── test_errors.py
 ```
 
 ## Important Notes
@@ -130,4 +152,24 @@ tests/
 - Secret sharing schemes are completely abstracted from developers
 - Field operations are generic, not tied to specific curves like BLS12-381
 - HoneyBadger MPC protocol requires n >= 3t + 1 (Byzantine fault tolerance)
+- Minimum 3 parties required for HoneyBadger MPC
 - Examples demonstrate proper separation of concerns and clean API usage
+- Native bindings required for actual compilation and execution
+- Uses ctypes to interface with C FFI from pre-built Rust libraries in external/ submodules
+
+## Building Native Libraries
+
+```bash
+# Initialize submodules
+git submodule update --init --recursive
+
+# Build all native libraries
+cd external/stoffel-lang && cargo build --release && cd ../..
+cd external/stoffel-vm && cargo build --release && cd ../..
+cd external/mpc-protocols && cargo build --release && cd ../..
+
+# Test bindings
+python test_native_bindings.py
+```
+
+**Note**: The VM C FFI requires adding `pub mod cffi;` to `external/stoffel-vm/crates/stoffel-vm/src/lib.rs` before building. Without this, only compiler and MPC bindings work.

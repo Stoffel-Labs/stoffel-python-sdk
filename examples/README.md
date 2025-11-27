@@ -1,125 +1,111 @@
-# Stoffel Python SDK Examples
+# Stoffel SDK Examples
 
-This directory contains examples demonstrating the Stoffel Python SDK.
+This directory contains examples demonstrating how to use the Stoffel Python SDK
+for secure multiparty computation (MPC).
 
-## Examples
+## Main Example
 
-### `simple_api_demo.py` - Quick Start
-**Recommended for most users**
-
-```bash
-python examples/simple_api_demo.py
-```
-
-Demonstrates:
-- Basic builder pattern (`Stoffel.compile(...).parties(...).build()`)
-- Creating MPC participants (clients, servers)
-- Clean API design principles
-- Exception hierarchy
-
-### `correct_flow.py` - Complete MPC Workflow
-**Comprehensive example showing full MPC workflows**
+**`main.py`** - Complete MPC workflow with coordinator
 
 ```bash
-python examples/correct_flow.py
+python examples/main.py
 ```
 
-Demonstrates:
-- Client-server MPC architecture
-- Peer-to-peer MPC architecture using MPCNode
-- Network topology configuration with NetworkBuilder
-- TOML config file usage
-- Architecture overview
+This example demonstrates:
 
-### `vm_example.py` - Advanced VM Operations
-**For advanced users needing low-level VM control**
+1. **Creating a Coordinator** - The coordinator orchestrates computation phases
+2. **Loading a Program** - Compile or load pre-compiled Stoffel bytecode
+3. **Configuring MPC** - Set parties, threshold, protocol, and share type
+4. **Creating a Session** - Coordinator spawns MPC nodes
+5. **Client Connection** - Clients connect to coordinator and nodes
+6. **Computation Phases**:
+   - PREPROCESSING: Nodes generate Beaver triples and random shares
+   - AWAIT_INPUTS: Nodes accept secret-shared inputs from clients
+   - COMPUTE: Nodes execute the MPC computation
+   - SEND_OUTPUTS: Nodes send output shares to clients
+7. **Output Reconstruction** - Clients reconstruct final outputs
 
-```bash
-python examples/vm_example.py
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         COORDINATOR                                  │
+│  Orchestrates computation phases (does NOT compute)                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼              ▼
+            ┌───────────┐  ┌───────────┐  ┌───────────┐
+            │  Node 0   │  │  Node 1   │  │  Node 2   │  ...
+            │ (compute) │  │ (compute) │  │ (compute) │
+            └─────┬─────┘  └─────┬─────┘  └─────┬─────┘
+                  │              │              │
+                  └──────────────┼──────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+            ┌───────────────┐        ┌───────────────┐
+            │   Client A    │        │   Client B    │
+            │  (inputs)     │        │  (inputs)     │
+            └───────────────┘        └───────────────┘
 ```
 
-Note: Requires the Stoffel VM shared library to be installed.
+**Key Points:**
+- Coordinator orchestrates WHEN things happen, but doesn't compute
+- Clients send inputs DIRECTLY to nodes (secret-shared)
+- Nodes send outputs DIRECTLY to clients
+- Clients reconstruct outputs locally
 
 ## Quick Start
 
 ```python
 from stoffel import Stoffel
+from stoffel.coordinator import MockMPCCoordinator, CoordinatorClient
 
-# Compile and configure MPC
-runtime = (Stoffel.compile("main main() -> int64: return 42")
-    .parties(5)
+# Create coordinator (for local testing)
+coordinator = MockMPCCoordinator()
+
+# Load program with MPC configuration
+runtime = (
+    Stoffel.load(bytecode)  # or Stoffel.compile(source)
+    .parties(4)
     .threshold(1)
-    .build())
+    .build()
+)
 
-# Create participants
-client = runtime.client(100).with_inputs([42]).build()
-server = runtime.server(0).build()
+# Create session
+session_id = await coordinator.create_session(
+    runtime,
+    expected_clients=[100, 101],
+)
+
+# Create client and connect
+client = CoordinatorClient(client_id=100)
+client.connect_to_coordinator(coordinator)
+
+# Coordinator orchestrates computation phases
+await coordinator.signal_preprocessing(session_id)
+await coordinator.signal_await_inputs(session_id)
+
+# Client sends inputs to nodes
+await client.send_inputs_to_nodes(session_id, inputs=[42, 17])
+
+# Coordinator continues orchestration
+await coordinator.signal_compute(session_id)
+await coordinator.signal_send_outputs(session_id)
+
+# Client receives outputs
+outputs = await client.receive_outputs_from_nodes(session_id)
 ```
 
-## Architecture Overview
+## Production vs Mock Mode
 
-```
-Stoffel.compile()/load()
-    |
-    v
-StoffelBuilder (configure MPC params)
-    |
-    v
-StoffelRuntime (holds Program + config)
-    |
-    v
-MPCClient / MPCServer / MPCNode (participants)
-```
+**Mock Mode (for development):**
+- Uses `MockMPCCoordinator`
+- Nodes are created locally in-process
+- No actual cryptographic computation (simulated)
 
-## MPC Participant Types
-
-| Type | Role | Use Case |
-|------|------|----------|
-| `MPCClient` | Input provider | Send secret-shared inputs, receive results |
-| `MPCServer` | Compute node | Run secure computation on shares |
-| `MPCNode` | Both | Peer-to-peer MPC where all parties have inputs |
-
-## Configuration
-
-MPC parameters are configured via the builder pattern:
-
-```python
-runtime = (Stoffel.compile(source)
-    .parties(5)              # Number of parties
-    .threshold(1)            # Fault tolerance (n >= 3t+1)
-    .instance_id(42)         # Computation instance ID
-    .protocol(ProtocolType.HONEYBADGER)  # MPC protocol
-    .share_type(ShareType.ROBUST)        # Secret sharing scheme
-    .build())
-```
-
-Or load from a TOML file:
-
-```python
-runtime = (Stoffel.compile(source)
-    .network_config_file("stoffel.toml")
-    .build())
-```
-
-## Advanced Module
-
-For lower-level control, use the advanced module:
-
-```python
-from stoffel.advanced import ShareManager, NetworkBuilder
-
-# Manual secret sharing
-manager = ShareManager(n_parties=5, threshold=1)
-shares = manager.create_shares(42)
-
-# Custom network topology
-topology = (NetworkBuilder(n_parties=5)
-    .localhost(base_port=19200)
-    .full_mesh()
-    .build())
-```
-
-## Note
-
-Actual MPC execution requires PyO3 bindings to the Rust core, which are coming soon.
-Currently, the API structure is implemented with placeholder implementations.
+**Production Mode:**
+- Connect to external coordinator service
+- Nodes run as separate processes/services
+- Real MPC protocol execution with networking

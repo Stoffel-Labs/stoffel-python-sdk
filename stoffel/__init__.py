@@ -64,6 +64,18 @@ from .compiler import StoffelCompiler, CompilerOptions
 # Network configuration
 from .network_config import NetworkConfig, NetworkSettings, MPCSettings
 
+# Coordinator (mock for testing, production uses external service)
+from .coordinator import (
+    MockMPCCoordinator,
+    MPCSession,
+    SessionState,
+    ComputationResult,
+    CoordinatorClient,
+)
+
+# Core bindings availability
+from ._core import is_native_available, get_binding_method
+
 __all__ = [
     # Main API
     "Stoffel",
@@ -90,6 +102,17 @@ __all__ = [
     "NetworkConfig",
     "NetworkSettings",
     "MPCSettings",
+
+    # Coordinator
+    "MockMPCCoordinator",
+    "MPCSession",
+    "SessionState",
+    "ComputationResult",
+    "CoordinatorClient",
+
+    # Core bindings
+    "is_native_available",
+    "get_binding_method",
 
     # Exceptions
     "StoffelError",

@@ -29,6 +29,9 @@ import os
 from .compiler import StoffelCompiler, CompilerOptions
 from .compiler.program import CompiledProgram
 
+# Import native bindings module (provides fallback when unavailable)
+from . import _core as native
+
 
 class ProtocolType(Enum):
     """
@@ -501,25 +504,30 @@ class Stoffel:
 
         Raises:
             ValueError: If no source, file, or bytecode provided
-            NotImplementedError: VM bindings are not yet available
+            NotImplementedError: If native bindings are not available
 
         Example:
             # Quick local test - no need for MPC config
             result = Stoffel.compile("main main() -> int64:\\n  return 42").execute_local()
         """
-        # TODO: Execute via VM bindings
-        # This will be implemented when we have proper PyO3 bindings
-        raise NotImplementedError(
-            "Local execution requires VM bindings. "
-            "This will be implemented when PyO3 bindings are available."
-        )
+        bytecode = self._get_bytecode()
+        return native.execute_local(bytecode, "main")
 
     def _get_bytecode(self) -> bytes:
         """Get bytecode, compiling if necessary"""
         if self._bytecode is not None:
             return self._bytecode
 
-        # Need to compile
+        # Try native compilation first (via PyO3 bindings)
+        if native.is_native_available():
+            if self._source is not None:
+                return native.compile_source(self._source, self._optimize)
+            elif self._file_path is not None:
+                return native.compile_file(self._file_path, self._optimize)
+            else:
+                raise ValueError("No source, file, or bytecode provided")
+
+        # Fall back to subprocess-based compiler
         compiler = StoffelCompiler()
 
         if self._optimize:
@@ -702,6 +710,8 @@ class StoffelRuntime:
             threshold=threshold,
             instance_id=instance_id,
             protocol_type=self._protocol_type,
+            share_type=self._share_type,
+            bytecode=self._bytecode,
         )
 
     def node(self, party_id: int) -> "MPCNodeBuilder":
