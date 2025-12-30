@@ -1,10 +1,10 @@
 """
-Exception classes for StoffelVM Python bindings
+Exception classes for Stoffel VM Python bindings
 """
 
 
 class VMError(Exception):
-    """Base exception class for StoffelVM errors"""
+    """Base exception class for Stoffel VM errors"""
     pass
 
 

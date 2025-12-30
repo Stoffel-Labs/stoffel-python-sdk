@@ -6,7 +6,7 @@ import pytest
 import asyncio
 from unittest.mock import Mock, patch
 
-from stoffel.client import StoffelMPCClient
+from stoffel.client import StoffelClient as StoffelMPCClient
 
 
 class TestStoffelMPCClient:

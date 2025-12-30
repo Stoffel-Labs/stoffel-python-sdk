@@ -1,7 +1,7 @@
 """
-Compiled StoffelLang program representation and loading
+Compiled Stoffel program representation and loading
 
-This module handles loading and representing compiled StoffelLang programs
+This module handles loading and representing compiled Stoffel programs
 (.stfb files) for execution on the VM.
 """
 
@@ -15,8 +15,8 @@ from .exceptions import LoadError
 
 class CompiledProgram:
     """
-    Represents a compiled StoffelLang program
-    
+    Represents a compiled Stoffel program
+
     This class wraps a compiled .stfb binary and provides methods
     to execute functions and interact with the program.
     """

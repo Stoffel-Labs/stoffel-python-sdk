@@ -1,57 +1,111 @@
-# Stoffel Python SDK Examples
+# Stoffel SDK Examples
 
-This directory contains examples demonstrating how to use the Stoffel Python SDK.
+This directory contains examples demonstrating how to use the Stoffel Python SDK
+for secure multiparty computation (MPC).
 
-## Examples Overview
+## Main Example
 
-### `simple_api_demo.py` - Quick Start
-**Recommended for most users**
-- Demonstrates the simplest possible usage
-- Shows clean, high-level API for basic MPC operations
-- One-call execution patterns
-- Status checking and client management
-
-### `correct_flow.py` - Complete Architecture
-**Comprehensive example showing proper separation of concerns**
-- Full workflow: StoffelLang compilation → MPC network execution
-- Proper separation between VM (StoffelProgram) and Client (StoffelMPCClient)
-- Multiple network configuration options
-- Demonstrates both local testing and MPC network execution
-- Shows architectural boundaries and responsibilities
-
-### `vm_example.py` - Advanced VM Operations
-**For advanced users needing low-level VM control**
-- Direct StoffelVM Python bindings usage
-- Foreign function registration
-- Value type handling
-- VM object management
-- Lower-level API for specialized use cases
-
-## Running Examples
-
-Note: These examples use placeholder functionality for demonstration. 
-For actual execution, you would need:
-- Compiled StoffelLang programs (`.stfl` → `.stfb`)
-- Running MPC network nodes
-- Optional coordinator service (for metadata exchange)
+**`main.py`** - Complete MPC workflow with coordinator
 
 ```bash
-# Run the simple demo
-python examples/simple_api_demo.py
-
-# Run the complete flow example  
-python examples/correct_flow.py
-
-# Run the VM example
-python examples/vm_example.py
+python examples/main.py
 ```
 
-## Architecture Overview
+This example demonstrates:
 
-The Stoffel framework has clear separation of concerns:
+1. **Creating a Coordinator** - The coordinator orchestrates computation phases
+2. **Loading a Program** - Compile or load pre-compiled Stoffel bytecode
+3. **Configuring MPC** - Set parties, threshold, protocol, and share type
+4. **Creating a Session** - Coordinator spawns MPC nodes
+5. **Client Connection** - Clients connect to coordinator and nodes
+6. **Computation Phases**:
+   - PREPROCESSING: Nodes generate Beaver triples and random shares
+   - AWAIT_INPUTS: Nodes accept secret-shared inputs from clients
+   - COMPUTE: Nodes execute the MPC computation
+   - SEND_OUTPUTS: Nodes send output shares to clients
+7. **Output Reconstruction** - Clients reconstruct final outputs
 
-- **StoffelProgram** (VM): Compilation, execution parameters, local testing
-- **StoffelMPCClient** (Network): MPC communication, private data, result reconstruction
-- **Coordinator** (Optional): MPC orchestration and metadata exchange
+## Architecture
 
-Examples demonstrate this clean architecture with proper boundaries between components.
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         COORDINATOR                                  │
+│  Orchestrates computation phases (does NOT compute)                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼              ▼
+            ┌───────────┐  ┌───────────┐  ┌───────────┐
+            │  Node 0   │  │  Node 1   │  │  Node 2   │  ...
+            │ (compute) │  │ (compute) │  │ (compute) │
+            └─────┬─────┘  └─────┬─────┘  └─────┬─────┘
+                  │              │              │
+                  └──────────────┼──────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+            ┌───────────────┐        ┌───────────────┐
+            │   Client A    │        │   Client B    │
+            │  (inputs)     │        │  (inputs)     │
+            └───────────────┘        └───────────────┘
+```
+
+**Key Points:**
+- Coordinator orchestrates WHEN things happen, but doesn't compute
+- Clients send inputs DIRECTLY to nodes (secret-shared)
+- Nodes send outputs DIRECTLY to clients
+- Clients reconstruct outputs locally
+
+## Quick Start
+
+```python
+from stoffel import Stoffel
+from stoffel.coordinator import MockMPCCoordinator, CoordinatorClient
+
+# Create coordinator (for local testing)
+coordinator = MockMPCCoordinator()
+
+# Load program with MPC configuration
+runtime = (
+    Stoffel.load(bytecode)  # or Stoffel.compile(source)
+    .parties(4)
+    .threshold(1)
+    .build()
+)
+
+# Create session
+session_id = await coordinator.create_session(
+    runtime,
+    expected_clients=[100, 101],
+)
+
+# Create client and connect
+client = CoordinatorClient(client_id=100)
+client.connect_to_coordinator(coordinator)
+
+# Coordinator orchestrates computation phases
+await coordinator.signal_preprocessing(session_id)
+await coordinator.signal_await_inputs(session_id)
+
+# Client sends inputs to nodes
+await client.send_inputs_to_nodes(session_id, inputs=[42, 17])
+
+# Coordinator continues orchestration
+await coordinator.signal_compute(session_id)
+await coordinator.signal_send_outputs(session_id)
+
+# Client receives outputs
+outputs = await client.receive_outputs_from_nodes(session_id)
+```
+
+## Production vs Mock Mode
+
+**Mock Mode (for development):**
+- Uses `MockMPCCoordinator`
+- Nodes are created locally in-process
+- No actual cryptographic computation (simulated)
+
+**Production Mode:**
+- Connect to external coordinator service
+- Nodes run as separate processes/services
+- Real MPC protocol execution with networking

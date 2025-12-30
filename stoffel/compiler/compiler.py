@@ -1,7 +1,7 @@
 """
-StoffelLang compiler integration
+Stoffel compiler integration
 
-This module provides a Python interface to the StoffelLang compiler,
+This module provides a Python interface to the Stoffel compiler,
 allowing compilation of .stfl source files to VM bytecode.
 """
 
@@ -19,7 +19,7 @@ from .program import CompiledProgram
 
 @dataclass
 class CompilerOptions:
-    """Configuration options for StoffelLang compilation"""
+    """Configuration options for Stoffel compilation"""
     optimize: bool = False
     optimization_level: int = 0
     print_ir: bool = False
@@ -28,26 +28,26 @@ class CompilerOptions:
 
 class StoffelCompiler:
     """
-    Python interface to the StoffelLang compiler
-    
-    This class provides methods to compile StoffelLang source code
+    Python interface to the Stoffel compiler
+
+    This class provides methods to compile Stoffel source code
     to VM-compatible bytecode and load compiled programs.
     """
-    
+
     def __init__(self, compiler_path: Optional[str] = None):
         """
-        Initialize the StoffelLang compiler interface
-        
+        Initialize the Stoffel compiler interface
+
         Args:
-            compiler_path: Path to the stoffellang compiler binary.
+            compiler_path: Path to the stoffel compiler binary.
                           If None, attempts to find it in standard locations.
         """
         self.compiler_path = self._find_compiler(compiler_path)
         if not self.compiler_path:
-            raise CompilationError("StoffelLang compiler not found. Please ensure it's installed and accessible.")
-    
+            raise CompilationError("Stoffel compiler not found. Please ensure it's installed and accessible.")
+
     def _find_compiler(self, compiler_path: Optional[str]) -> Optional[str]:
-        """Find the StoffelLang compiler binary"""
+        """Find the Stoffel compiler binary"""
         if compiler_path and os.path.isfile(compiler_path):
             return compiler_path
         
@@ -81,10 +81,10 @@ class StoffelCompiler:
         options: Optional[CompilerOptions] = None
     ) -> CompiledProgram:
         """
-        Compile StoffelLang source code to VM bytecode
-        
+        Compile Stoffel source code to VM bytecode
+
         Args:
-            source_code: The StoffelLang source code to compile
+            source_code: The Stoffel source code to compile
             filename: Name for the source file (used in error messages)
             options: Compilation options
             
@@ -116,7 +116,7 @@ class StoffelCompiler:
         options: Optional[CompilerOptions] = None
     ) -> CompiledProgram:
         """
-        Compile a StoffelLang source file to VM bytecode
+        Compile a Stoffel source file to VM bytecode
         
         Args:
             source_path: Path to the .stfl source file
@@ -187,7 +187,7 @@ class StoffelCompiler:
             raise CompilationError(f"Failed to run compiler: {e}")
     
     def get_compiler_version(self) -> str:
-        """Get the version of the StoffelLang compiler"""
+        """Get the version of the Stoffel compiler"""
         try:
             result = subprocess.run(
                 [self.compiler_path, '--version'],
@@ -201,10 +201,10 @@ class StoffelCompiler:
     
     def validate_syntax(self, source_code: str, filename: str = "main.stfl") -> List[str]:
         """
-        Validate StoffelLang syntax without generating bytecode
-        
+        Validate Stoffel syntax without generating bytecode
+
         Args:
-            source_code: The StoffelLang source code to validate
+            source_code: The Stoffel source code to validate
             filename: Name for the source file (used in error messages)
             
         Returns:

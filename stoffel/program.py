@@ -1,7 +1,7 @@
 """
 Stoffel Program Management
 
-This module handles StoffelLang program compilation, VM setup, and execution parameters.
+This module handles Stoffel program compilation, VM setup, and execution parameters.
 The VM is responsible for program compilation, loading, and defining execution parameters.
 """
 
@@ -16,15 +16,15 @@ from .vm import VirtualMachine
 
 class StoffelProgram:
     """
-    Manages a StoffelLang program and its execution in the VM
-    
+    Manages a Stoffel program and its execution in the VM
+
     Handles:
     - Program compilation
-    - VM setup and configuration  
+    - VM setup and configuration
     - Execution parameter definition
     - Program lifecycle management
     """
-    
+
     def __init__(
         self,
         source_path: Optional[str] = None,
@@ -32,10 +32,10 @@ class StoffelProgram:
     ):
         """
         Initialize program manager
-        
+
         Args:
             source_path: Path to .stfl source file (optional, can compile later)
-            vm_library_path: Path to StoffelVM shared library
+            vm_library_path: Path to Stoffel VM shared library
         """
         self.compiler = StoffelCompiler()
         self.vm = VirtualMachine(vm_library_path)
@@ -50,13 +50,13 @@ class StoffelProgram:
             self.program_id = self._generate_program_id(source_path)
     
     def compile(
-        self, 
+        self,
         source_path: Optional[str] = None,
         output_path: Optional[str] = None,
         optimize: bool = False
     ) -> str:
         """
-        Compile StoffelLang source to VM bytecode
+        Compile Stoffel source to VM bytecode
         
         Args:
             source_path: Path to .stfl source (uses initialized path if None)
@@ -239,7 +239,7 @@ def compile_stoffel_program(
     optimize: bool = False
 ) -> str:
     """
-    Convenience function to compile a StoffelLang program
+    Convenience function to compile a Stoffel program
     
     Args:
         source_path: Path to .stfl source file

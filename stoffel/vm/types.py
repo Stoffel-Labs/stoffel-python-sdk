@@ -1,5 +1,5 @@
 """
-Type definitions for StoffelVM Python bindings
+Type definitions for Stoffel VM Python bindings
 """
 
 from enum import IntEnum
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 
 class ValueType(IntEnum):
-    """StoffelVM value types"""
+    """Stoffel VM value types"""
     UNIT = 0
     INT = 1
     FLOAT = 2
@@ -38,9 +38,9 @@ class ShareType(IntEnum):
 @dataclass
 class StoffelValue:
     """
-    Python representation of a StoffelVM value
-    
-    This class provides a convenient wrapper around StoffelVM values,
+    Python representation of a Stoffel VM value
+
+    This class provides a convenient wrapper around Stoffel VM values,
     handling the conversion between Python types and VM types.
     """
     value_type: ValueType

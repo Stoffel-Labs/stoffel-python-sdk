@@ -1,7 +1,7 @@
 """
-StoffelVM Python bindings
+Stoffel VM Python bindings
 
-This module provides Python bindings for StoffelVM through the C FFI.
+This module provides Python bindings for the Stoffel VM through the C FFI.
 """
 
 from .vm import VirtualMachine

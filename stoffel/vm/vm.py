@@ -1,7 +1,7 @@
 """
-Python bindings for StoffelVM
+Python bindings for Stoffel VM
 
-This module provides a high-level Python interface to StoffelVM through CFFI.
+This module provides a high-level Python interface to the Stoffel VM through CFFI.
 """
 
 import ctypes
@@ -52,18 +52,18 @@ CForeignFunctionType = ctypes.CFUNCTYPE(
 
 class VirtualMachine:
     """
-    Python wrapper for StoffelVM
-    
-    This class provides a high-level interface to StoffelVM, handling
+    Python wrapper for the Stoffel VM
+
+    This class provides a high-level interface to the Stoffel VM, handling
     VM creation, function execution, and foreign function registration.
     """
-    
+
     def __init__(self, library_path: Optional[str] = None):
         """
-        Initialize a new StoffelVM instance
-        
+        Initialize a new Stoffel VM instance
+
         Args:
-            library_path: Path to the StoffelVM shared library.
+            library_path: Path to the Stoffel VM shared library.
                          If None, attempts to find it in standard locations.
         """
         self._load_library(library_path)
@@ -75,7 +75,7 @@ class VirtualMachine:
         self._registered_functions: Dict[str, Callable] = {}
     
     def _load_library(self, library_path: Optional[str]):
-        """Load the StoffelVM shared library"""
+        """Load the Stoffel VM shared library"""
         if library_path:
             self._lib = ctypes.CDLL(library_path)
         else:
@@ -129,23 +129,30 @@ class VirtualMachine:
         # stoffel_free_string
         self._lib.stoffel_free_string.argtypes = [c_char_p]
         self._lib.stoffel_free_string.restype = None
-        
-        # MPC engine functions
-        # stoffel_input_share
-        self._lib.stoffel_input_share.argtypes = [c_void_p, c_int, ctypes.POINTER(CStoffelValue), ctypes.POINTER(CStoffelValue)]
-        self._lib.stoffel_input_share.restype = c_int
-        
-        # stoffel_multiply_share
-        self._lib.stoffel_multiply_share.argtypes = [c_void_p, c_int, c_void_p, c_size_t, c_void_p, c_size_t, ctypes.POINTER(CStoffelValue)]
-        self._lib.stoffel_multiply_share.restype = c_int
-        
-        # stoffel_open_share
-        self._lib.stoffel_open_share.argtypes = [c_void_p, c_int, c_void_p, c_size_t, ctypes.POINTER(CStoffelValue)]
-        self._lib.stoffel_open_share.restype = c_int
-        
-        # stoffel_load_binary
-        self._lib.stoffel_load_binary.argtypes = [c_void_p, c_char_p]
-        self._lib.stoffel_load_binary.restype = c_int
+
+        # Optional MPC engine functions (may not be present in all builds)
+        self._has_mpc_functions = False
+        try:
+            # stoffel_input_share
+            self._lib.stoffel_input_share.argtypes = [c_void_p, c_int, ctypes.POINTER(CStoffelValue), ctypes.POINTER(CStoffelValue)]
+            self._lib.stoffel_input_share.restype = c_int
+
+            # stoffel_multiply_share
+            self._lib.stoffel_multiply_share.argtypes = [c_void_p, c_int, c_void_p, c_size_t, c_void_p, c_size_t, ctypes.POINTER(CStoffelValue)]
+            self._lib.stoffel_multiply_share.restype = c_int
+
+            # stoffel_open_share
+            self._lib.stoffel_open_share.argtypes = [c_void_p, c_int, c_void_p, c_size_t, ctypes.POINTER(CStoffelValue)]
+            self._lib.stoffel_open_share.restype = c_int
+
+            # stoffel_load_binary
+            self._lib.stoffel_load_binary.argtypes = [c_void_p, c_char_p]
+            self._lib.stoffel_load_binary.restype = c_int
+
+            self._has_mpc_functions = True
+        except AttributeError:
+            # MPC functions not available in this build
+            pass
     
     def __del__(self):
         """Cleanup VM instance"""
@@ -405,49 +412,57 @@ class VirtualMachine:
     def input_share(self, share_type: ShareType, clear_value: Any) -> StoffelValue:
         """
         Convert a clear value into a secret share
-        
+
         Args:
             share_type: Type of share to create
             clear_value: Clear value to convert to share
-            
+
         Returns:
             StoffelValue representing the secret share
-            
+
         Raises:
             ExecutionError: If share creation fails
+            NotImplementedError: If MPC functions not available
         """
+        if not self._has_mpc_functions:
+            raise NotImplementedError("MPC functions not available in this VM build")
+
         c_clear = self._python_value_to_c(clear_value)
         result = CStoffelValue()
-        
+
         status = self._lib.stoffel_input_share(
             self._vm_handle,
             share_type,
             ctypes.byref(c_clear),
             ctypes.byref(result)
         )
-        
+
         if status != 0:
             raise ExecutionError(f"Input share failed with status {status}")
-            
+
         return self._c_value_to_stoffel_value(result)
     
     def multiply_share(self, share_type: ShareType, left_share: bytes, right_share: bytes) -> StoffelValue:
         """
         Multiply two secret shares
-        
+
         Args:
             share_type: Type of shares being multiplied
             left_share: First share bytes
             right_share: Second share bytes
-            
+
         Returns:
             StoffelValue representing the result share
-            
+
         Raises:
             ExecutionError: If multiplication fails
+            NotImplementedError: If MPC functions not available
         """
+        if not self._has_mpc_functions:
+            raise NotImplementedError("MPC functions not available in this VM build")
+
         result = CStoffelValue()
-        
+
         status = self._lib.stoffel_multiply_share(
             self._vm_handle,
             share_type,
@@ -457,28 +472,32 @@ class VirtualMachine:
             len(right_share),
             ctypes.byref(result)
         )
-        
+
         if status != 0:
             raise ExecutionError(f"Multiply share failed with status {status}")
-            
+
         return self._c_value_to_stoffel_value(result)
     
     def open_share(self, share_type: ShareType, share_bytes: bytes) -> Any:
         """
         Open (reveal) a secret share as a clear value
-        
+
         Args:
             share_type: Type of share being opened
             share_bytes: Share bytes to reveal
-            
+
         Returns:
             The revealed clear value
-            
+
         Raises:
             ExecutionError: If opening fails
+            NotImplementedError: If MPC functions not available
         """
+        if not self._has_mpc_functions:
+            raise NotImplementedError("MPC functions not available in this VM build")
+
         result = CStoffelValue()
-        
+
         status = self._lib.stoffel_open_share(
             self._vm_handle,
             share_type,
@@ -486,26 +505,30 @@ class VirtualMachine:
             len(share_bytes),
             ctypes.byref(result)
         )
-        
+
         if status != 0:
             raise ExecutionError(f"Open share failed with status {status}")
-            
+
         return self._c_value_to_python(result)
     
     def load_binary(self, binary_path: str) -> None:
         """
-        Load a compiled StoffelLang binary into the VM
-        
+        Load a compiled Stoffel binary into the VM
+
         Args:
             binary_path: Path to the .stfb binary file
-            
+
         Raises:
             ExecutionError: If binary loading fails
+            NotImplementedError: If load_binary not available
         """
+        if not self._has_mpc_functions:
+            raise NotImplementedError("load_binary not available in this VM build")
+
         status = self._lib.stoffel_load_binary(
             self._vm_handle,
             binary_path.encode('utf-8')
         )
-        
+
         if status != 0:
             raise ExecutionError(f"Binary loading failed with status {status}")
