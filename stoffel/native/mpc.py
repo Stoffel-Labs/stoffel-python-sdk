@@ -2,22 +2,23 @@
 Native MPC bindings using ctypes
 
 Provides direct access to the MPC protocols (secret sharing) via C FFI.
+Based on: mpc-protocols/mpc/src/ffi/honey_badger_bindings.h
 """
 
 import ctypes
 from ctypes import (
     Structure, POINTER,
-    c_uint64, c_size_t, c_uint8, c_int
+    c_uint64, c_size_t, c_uint8, c_int, c_void_p, c_bool
 )
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Optional, Tuple
+from typing import List, Optional
 import os
 import platform
 
 
 class ShareErrorCode(IntEnum):
-    """Error codes for share operations"""
+    """Error codes for share operations - matches ShareErrorCode enum in C"""
     SUCCESS = 0
     INSUFFICIENT_SHARES = 1
     DEGREE_MISMATCH = 2
@@ -27,6 +28,11 @@ class ShareErrorCode(IntEnum):
     NO_SUITABLE_DOMAIN = 6
     POLYNOMIAL_OPERATION_ERROR = 7
     DECODING_ERROR = 8
+
+
+class FieldKind(IntEnum):
+    """Field type - matches FieldKind enum in C"""
+    BLS12_381_FR = 0
 
 
 class ShareType(IntEnum):
@@ -43,19 +49,19 @@ class ShareError(Exception):
         self.error_code = error_code
 
 
-# C structure definitions matching the MPC FFI
+# C structure definitions matching honey_badger_bindings.h
 
-class Bls12Fr(Structure):
-    """BLS12-381 scalar field element (4 x u64 limbs)"""
+class U256(Structure):
+    """256-bit unsigned integer (4 x u64 limbs)"""
     _fields_ = [
         ("data", c_uint64 * 4),
     ]
 
 
-class Bls12FrSlice(Structure):
-    """Slice of Bls12Fr elements"""
+class U256Slice(Structure):
+    """Slice of U256 elements"""
     _fields_ = [
-        ("pointer", POINTER(Bls12Fr)),
+        ("pointer", POINTER(U256)),
         ("len", c_size_t),
     ]
 
@@ -76,53 +82,56 @@ class UsizeSlice(Structure):
     ]
 
 
-class ShamirShareBls12(Structure):
-    """Shamir share structure"""
+# Share structures use opaque pointers for the share data
+# typedef struct FieldOpaque {} FieldOpaque;
+
+class ShamirShare(Structure):
+    """Shamir share structure - uses opaque pointer for share data"""
     _fields_ = [
-        ("share", Bls12Fr),
+        ("share", c_void_p),  # FieldOpaque *
         ("id", c_size_t),
         ("degree", c_size_t),
     ]
 
 
-class ShamirShareSliceBls12(Structure):
+class ShamirShareSlice(Structure):
     """Slice of Shamir shares"""
     _fields_ = [
-        ("pointer", POINTER(ShamirShareBls12)),
+        ("pointer", POINTER(ShamirShare)),
         ("len", c_size_t),
     ]
 
 
-class RobustShareBls12(Structure):
-    """Robust share structure"""
+class RobustShare(Structure):
+    """Robust share structure - uses opaque pointer for share data"""
     _fields_ = [
-        ("share", Bls12Fr),
+        ("share", c_void_p),  # FieldOpaque *
         ("id", c_size_t),
         ("degree", c_size_t),
     ]
 
 
-class RobustShareSliceBls12(Structure):
+class RobustShareSlice(Structure):
     """Slice of robust shares"""
     _fields_ = [
-        ("pointer", POINTER(RobustShareBls12)),
+        ("pointer", POINTER(RobustShare)),
         ("len", c_size_t),
     ]
 
 
-class NonRobustShareBls12(Structure):
-    """Non-robust share structure"""
+class NonRobustShare(Structure):
+    """Non-robust share structure - uses opaque pointer for share data"""
     _fields_ = [
-        ("share", Bls12Fr),
+        ("share", c_void_p),  # FieldOpaque *
         ("id", c_size_t),
         ("degree", c_size_t),
     ]
 
 
-class NonRobustShareSliceBls12(Structure):
+class NonRobustShareSlice(Structure):
     """Slice of non-robust shares"""
     _fields_ = [
-        ("pointer", POINTER(NonRobustShareBls12)),
+        ("pointer", POINTER(NonRobustShare)),
         ("len", c_size_t),
     ]
 
@@ -135,56 +144,28 @@ class Share:
     threshold: int
     share_type: ShareType
 
-    def to_robust_c_share(self) -> RobustShareBls12:
-        """Convert to C robust share structure"""
-        share = RobustShareBls12()
-        # Convert bytes to Bls12Fr
-        data = (c_uint64 * 4)()
-        for i in range(4):
-            start = i * 8
-            end = start + 8
-            data[i] = int.from_bytes(self.share_bytes[start:end], "little")
-        share.share.data = data
-        share.id = self.party_id
-        share.degree = self.threshold
-        return share
-
-    def to_non_robust_c_share(self) -> NonRobustShareBls12:
-        """Convert to C non-robust share structure"""
-        share = NonRobustShareBls12()
-        data = (c_uint64 * 4)()
-        for i in range(4):
-            start = i * 8
-            end = start + 8
-            data[i] = int.from_bytes(self.share_bytes[start:end], "little")
-        share.share.data = data
-        share.id = self.party_id
-        share.degree = self.threshold
-        return share
-
     @classmethod
-    def from_robust_c_share(cls, c_share: RobustShareBls12) -> "Share":
-        """Create from C robust share structure"""
-        share_bytes = bytearray(32)
-        for i in range(4):
-            start = i * 8
-            share_bytes[start:start + 8] = c_share.share.data[i].to_bytes(8, "little")
+    def from_robust_c_share(cls, c_share: RobustShare, lib: ctypes.CDLL) -> "Share":
+        """Create from C robust share structure by extracting bytes via FFI"""
+        # Use field_ptr_to_bytes to extract the bytes from the opaque pointer
+        byte_slice = lib.field_ptr_to_bytes(c_share.share, True)  # big-endian
+        share_bytes = bytes(byte_slice.pointer[:byte_slice.len])
+        lib.free_bytes_slice(byte_slice)
         return cls(
-            share_bytes=bytes(share_bytes),
+            share_bytes=share_bytes,
             party_id=c_share.id,
             threshold=c_share.degree,
             share_type=ShareType.ROBUST,
         )
 
     @classmethod
-    def from_non_robust_c_share(cls, c_share: NonRobustShareBls12) -> "Share":
-        """Create from C non-robust share structure"""
-        share_bytes = bytearray(32)
-        for i in range(4):
-            start = i * 8
-            share_bytes[start:start + 8] = c_share.share.data[i].to_bytes(8, "little")
+    def from_non_robust_c_share(cls, c_share: NonRobustShare, lib: ctypes.CDLL) -> "Share":
+        """Create from C non-robust share structure by extracting bytes via FFI"""
+        byte_slice = lib.field_ptr_to_bytes(c_share.share, True)  # big-endian
+        share_bytes = bytes(byte_slice.pointer[:byte_slice.len])
+        lib.free_bytes_slice(byte_slice)
         return cls(
-            share_bytes=bytes(share_bytes),
+            share_bytes=share_bytes,
             party_id=c_share.id,
             threshold=c_share.degree,
             share_type=ShareType.NON_ROBUST,
@@ -196,6 +177,7 @@ class NativeShareManager:
     Native secret sharing manager using C FFI
 
     Provides access to HoneyBadger MPC secret sharing operations.
+    Based on mpc-protocols FFI (honey_badger_bindings.h).
     """
 
     def __init__(
@@ -228,6 +210,7 @@ class NativeShareManager:
         self._n_parties = n_parties
         self._threshold = threshold
         self._robust = robust
+        self._field_kind = FieldKind.BLS12_381_FR
 
         self._lib = self._load_library(library_path)
         self._setup_functions()
@@ -291,78 +274,130 @@ class NativeShareManager:
         )
 
     def _setup_functions(self):
-        """Set up C function signatures"""
+        """Set up C function signatures matching honey_badger_bindings.h"""
+
+        # field_ptr_to_bytes - converts opaque field pointer to bytes
+        self._lib.field_ptr_to_bytes.argtypes = [c_void_p, c_bool]
+        self._lib.field_ptr_to_bytes.restype = ByteSlice
+
+        # free_bytes_slice
+        self._lib.free_bytes_slice.argtypes = [ByteSlice]
+        self._lib.free_bytes_slice.restype = None
+
+        # be_bytes_to_u256 - convert bytes to U256
+        self._lib.be_bytes_to_u256.argtypes = [ByteSlice]
+        self._lib.be_bytes_to_u256.restype = U256
+
+        # le_bytes_to_u256
+        self._lib.le_bytes_to_u256.argtypes = [ByteSlice]
+        self._lib.le_bytes_to_u256.restype = U256
+
+        # u256_to_be_bytes
+        self._lib.u256_to_be_bytes.argtypes = [U256]
+        self._lib.u256_to_be_bytes.restype = ByteSlice
+
+        # u256_to_le_bytes
+        self._lib.u256_to_le_bytes.argtypes = [U256]
+        self._lib.u256_to_le_bytes.restype = ByteSlice
+
+        # free_u256_slice
+        self._lib.free_u256_slice.argtypes = [U256Slice]
+        self._lib.free_u256_slice.restype = None
+
         # robust_share_compute_shares
+        # ShareErrorCode robust_share_compute_shares(
+        #     U256 secret, uintptr_t degree, uintptr_t n,
+        #     RobustShareSlice *output_shares, FieldKind field_kind)
         self._lib.robust_share_compute_shares.argtypes = [
-            Bls12Fr,  # secret
+            U256,  # secret
             c_size_t,  # degree (threshold)
             c_size_t,  # n (number of parties)
-            POINTER(RobustShareSliceBls12),  # output_shares
+            POINTER(RobustShareSlice),  # output_shares
+            c_int,  # field_kind
         ]
         self._lib.robust_share_compute_shares.restype = c_int
 
         # robust_share_recover_secret
+        # ShareErrorCode robust_share_recover_secret(
+        #     RobustShareSlice shares, uintptr_t n,
+        #     U256 *output_secret, U256Slice *output_coeffs, FieldKind field_kind)
         self._lib.robust_share_recover_secret.argtypes = [
-            RobustShareSliceBls12,  # shares
+            RobustShareSlice,  # shares
             c_size_t,  # n
-            POINTER(Bls12Fr),  # output_secret
-            POINTER(Bls12FrSlice),  # output_coeffs
+            POINTER(U256),  # output_secret
+            POINTER(U256Slice),  # output_coeffs
+            c_int,  # field_kind
         ]
         self._lib.robust_share_recover_secret.restype = c_int
 
         # non_robust_share_compute_shares
         self._lib.non_robust_share_compute_shares.argtypes = [
-            Bls12Fr,  # secret
+            U256,  # secret
             c_size_t,  # degree (threshold)
             c_size_t,  # n (number of parties)
-            POINTER(NonRobustShareSliceBls12),  # output_shares
+            POINTER(NonRobustShareSlice),  # output_shares
+            c_int,  # field_kind
         ]
         self._lib.non_robust_share_compute_shares.restype = c_int
 
         # non_robust_share_recover_secret
         self._lib.non_robust_share_recover_secret.argtypes = [
-            NonRobustShareSliceBls12,  # shares
+            NonRobustShareSlice,  # shares
             c_size_t,  # n
-            POINTER(Bls12Fr),  # output_secret
-            POINTER(Bls12FrSlice),  # output_coeffs
+            POINTER(U256),  # output_secret
+            POINTER(U256Slice),  # output_coeffs
+            c_int,  # field_kind
         ]
         self._lib.non_robust_share_recover_secret.restype = c_int
 
-        # free functions
-        self._lib.free_robust_share_bls12_slice.argtypes = [RobustShareSliceBls12]
-        self._lib.free_robust_share_bls12_slice.restype = None
+        # free_robust_share_slice
+        self._lib.free_robust_share_slice.argtypes = [RobustShareSlice]
+        self._lib.free_robust_share_slice.restype = None
 
-        self._lib.free_non_robust_share_bls12_slice.argtypes = [NonRobustShareSliceBls12]
-        self._lib.free_non_robust_share_bls12_slice.restype = None
+        # free_non_robust_share_slice
+        self._lib.free_non_robust_share_slice.argtypes = [NonRobustShareSlice]
+        self._lib.free_non_robust_share_slice.restype = None
 
-        self._lib.free_bls12_fr_slice.argtypes = [Bls12FrSlice]
-        self._lib.free_bls12_fr_slice.restype = None
+        # robust_share_new - creates a share from components
+        self._lib.robust_share_new.argtypes = [
+            U256,  # secret value
+            c_size_t,  # id
+            c_size_t,  # degree
+            c_int,  # field_kind
+        ]
+        self._lib.robust_share_new.restype = RobustShare
 
-    def _int_to_bls12fr(self, value: int) -> Bls12Fr:
-        """Convert an integer to a BLS12-381 field element"""
-        fr = Bls12Fr()
-        # Handle negative numbers
+        # non_robust_share_new
+        self._lib.non_robust_share_new.argtypes = [
+            U256,  # secret value
+            c_size_t,  # id
+            c_size_t,  # degree
+            c_int,  # field_kind
+        ]
+        self._lib.non_robust_share_new.restype = NonRobustShare
+
+    def _int_to_u256(self, value: int) -> U256:
+        """Convert an integer to a U256 structure"""
+        u256 = U256()
+        # Handle negative numbers by taking absolute value
+        # (proper field negation would require the field modulus)
         if value < 0:
-            # For negative numbers, we need to use modular arithmetic
-            # The field modulus is approximately 2^255
-            # For simplicity, we just use the absolute value and negate in the field
-            # This is a simplified approach
             value = abs(value)
 
-        # Convert to 4 limbs (little-endian)
+        # Convert to 4 limbs (little-endian u64 array)
         data = (c_uint64 * 4)()
         data[0] = value & ((1 << 64) - 1)
         data[1] = (value >> 64) & ((1 << 64) - 1)
         data[2] = (value >> 128) & ((1 << 64) - 1)
         data[3] = (value >> 192) & ((1 << 64) - 1)
-        fr.data = data
-        return fr
+        u256.data = data
+        return u256
 
-    def _bls12fr_to_int(self, fr: Bls12Fr) -> int:
-        """Convert a BLS12-381 field element to an integer"""
+    def _u256_to_int(self, u256: U256) -> int:
+        """Convert a U256 structure to an integer"""
         result = 0
         for i in range(4):
-            result |= fr.data[i] << (64 * i)
+            result |= u256.data[i] << (64 * i)
 
         # Check if this is a "small" value that fits in i64
         if result <= (1 << 63) - 1:
@@ -384,15 +419,16 @@ class NativeShareManager:
         Raises:
             ShareError: If sharing fails
         """
-        secret = self._int_to_bls12fr(value)
+        secret = self._int_to_u256(value)
 
         if self._robust:
-            output_shares = RobustShareSliceBls12()
+            output_shares = RobustShareSlice()
             ret = self._lib.robust_share_compute_shares(
                 secret,
                 self._threshold,
                 self._n_parties,
-                ctypes.byref(output_shares)
+                ctypes.byref(output_shares),
+                self._field_kind
             )
 
             if ret != 0:
@@ -404,19 +440,20 @@ class NativeShareManager:
             try:
                 shares = []
                 for i in range(output_shares.len):
-                    share = Share.from_robust_c_share(output_shares.pointer[i])
+                    share = Share.from_robust_c_share(output_shares.pointer[i], self._lib)
                     shares.append(share)
                 return shares
             finally:
-                self._lib.free_robust_share_bls12_slice(output_shares)
+                self._lib.free_robust_share_slice(output_shares)
 
         else:
-            output_shares = NonRobustShareSliceBls12()
+            output_shares = NonRobustShareSlice()
             ret = self._lib.non_robust_share_compute_shares(
                 secret,
                 self._threshold,
                 self._n_parties,
-                ctypes.byref(output_shares)
+                ctypes.byref(output_shares),
+                self._field_kind
             )
 
             if ret != 0:
@@ -428,11 +465,11 @@ class NativeShareManager:
             try:
                 shares = []
                 for i in range(output_shares.len):
-                    share = Share.from_non_robust_c_share(output_shares.pointer[i])
+                    share = Share.from_non_robust_c_share(output_shares.pointer[i], self._lib)
                     shares.append(share)
                 return shares
             finally:
-                self._lib.free_non_robust_share_bls12_slice(output_shares)
+                self._lib.free_non_robust_share_slice(output_shares)
 
     def reconstruct(self, shares: List[Share]) -> int:
         """
@@ -453,24 +490,36 @@ class NativeShareManager:
                 ShareErrorCode.INSUFFICIENT_SHARES
             )
 
-        output_secret = Bls12Fr()
-        output_coeffs = Bls12FrSlice()
+        output_secret = U256()
+        output_coeffs = U256Slice()
 
         if self._robust:
             # Create C array of shares
-            c_shares = (RobustShareBls12 * len(shares))()
+            # We need to reconstruct the C shares from our Python Share objects
+            # This requires converting bytes back to FieldOpaque pointers
+            # For reconstruction, we use robust_share_new to create shares
+            c_shares = (RobustShare * len(shares))()
             for i, share in enumerate(shares):
-                c_shares[i] = share.to_robust_c_share()
+                # Create a new share using robust_share_new
+                secret_u256 = self._bytes_to_u256(share.share_bytes)
+                c_share = self._lib.robust_share_new(
+                    secret_u256,
+                    share.party_id,
+                    share.threshold,
+                    self._field_kind
+                )
+                c_shares[i] = c_share
 
-            shares_slice = RobustShareSliceBls12()
+            shares_slice = RobustShareSlice()
             shares_slice.pointer = c_shares
             shares_slice.len = len(shares)
 
             ret = self._lib.robust_share_recover_secret(
                 shares_slice,
-                self._n_parties,
+                len(shares),  # number of shares provided, not n_parties
                 ctypes.byref(output_secret),
-                ctypes.byref(output_coeffs)
+                ctypes.byref(output_coeffs),
+                self._field_kind
             )
 
             if ret != 0:
@@ -480,26 +529,34 @@ class NativeShareManager:
                 )
 
             try:
-                return self._bls12fr_to_int(output_secret)
+                return self._u256_to_int(output_secret)
             finally:
                 if output_coeffs.pointer:
-                    self._lib.free_bls12_fr_slice(output_coeffs)
+                    self._lib.free_u256_slice(output_coeffs)
 
         else:
-            # Create C array of shares
-            c_shares = (NonRobustShareBls12 * len(shares))()
+            # Non-robust reconstruction
+            c_shares = (NonRobustShare * len(shares))()
             for i, share in enumerate(shares):
-                c_shares[i] = share.to_non_robust_c_share()
+                secret_u256 = self._bytes_to_u256(share.share_bytes)
+                c_share = self._lib.non_robust_share_new(
+                    secret_u256,
+                    share.party_id,
+                    share.threshold,
+                    self._field_kind
+                )
+                c_shares[i] = c_share
 
-            shares_slice = NonRobustShareSliceBls12()
+            shares_slice = NonRobustShareSlice()
             shares_slice.pointer = c_shares
             shares_slice.len = len(shares)
 
             ret = self._lib.non_robust_share_recover_secret(
                 shares_slice,
-                self._n_parties,
+                len(shares),  # number of shares provided, not n_parties
                 ctypes.byref(output_secret),
-                ctypes.byref(output_coeffs)
+                ctypes.byref(output_coeffs),
+                self._field_kind
             )
 
             if ret != 0:
@@ -509,7 +566,23 @@ class NativeShareManager:
                 )
 
             try:
-                return self._bls12fr_to_int(output_secret)
+                return self._u256_to_int(output_secret)
             finally:
                 if output_coeffs.pointer:
-                    self._lib.free_bls12_fr_slice(output_coeffs)
+                    self._lib.free_u256_slice(output_coeffs)
+
+    def _bytes_to_u256(self, data: bytes) -> U256:
+        """Convert bytes to U256 (big-endian)"""
+        # Pad or truncate to 32 bytes
+        if len(data) < 32:
+            data = data.rjust(32, b'\x00')
+        elif len(data) > 32:
+            data = data[:32]
+
+        # Create ByteSlice and use FFI to convert
+        byte_array = (c_uint8 * 32)(*data)
+        byte_slice = ByteSlice()
+        byte_slice.pointer = ctypes.cast(byte_array, POINTER(c_uint8))
+        byte_slice.len = 32
+
+        return self._lib.be_bytes_to_u256(byte_slice)
