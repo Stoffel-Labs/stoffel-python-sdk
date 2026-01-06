@@ -7,7 +7,7 @@ Provides direct access to the Stoffel VM via C FFI.
 import ctypes
 from ctypes import (
     Structure, Union as CUnion, POINTER, CFUNCTYPE,
-    c_int, c_int64, c_double, c_char_p, c_size_t, c_void_p
+    c_int, c_int64, c_double, c_char_p, c_size_t, c_void_p, c_uint8
 )
 from typing import Any, Callable, Dict, List, Optional, Union
 from enum import IntEnum
@@ -278,6 +278,45 @@ class NativeVM:
         # stoffel_free_string
         self._lib.stoffel_free_string.argtypes = [c_char_p]
         self._lib.stoffel_free_string.restype = None
+
+        # stoffel_load_bytecode
+        self._lib.stoffel_load_bytecode.argtypes = [
+            c_void_p,  # handle
+            POINTER(c_uint8),  # bytecode
+            c_size_t,  # bytecode_len
+        ]
+        self._lib.stoffel_load_bytecode.restype = c_int
+
+    def load(self, bytecode: bytes) -> None:
+        """
+        Load bytecode into the VM
+
+        Args:
+            bytecode: Compiled bytecode bytes
+
+        Raises:
+            VMError: If loading fails
+        """
+        if not bytecode:
+            raise VMError("Cannot load empty bytecode")
+
+        # Convert bytes to ctypes array
+        bytecode_array = (c_uint8 * len(bytecode)).from_buffer_copy(bytecode)
+
+        ret = self._lib.stoffel_load_bytecode(
+            self._handle,
+            bytecode_array,
+            len(bytecode)
+        )
+
+        if ret != 0:
+            error_messages = {
+                -1: "Invalid VM handle or null bytecode pointer",
+                -2: "Failed to deserialize bytecode (invalid format or corrupted data)",
+                -3: "Failed to register functions from bytecode",
+            }
+            msg = error_messages.get(ret, f"Unknown error code: {ret}")
+            raise VMError(f"Failed to load bytecode: {msg}")
 
     def execute(self, function_name: str) -> Any:
         """

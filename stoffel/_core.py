@@ -135,13 +135,12 @@ def execute_local(
     if _BINDING_METHOD == "ctypes" and _NativeVM is not None:
         try:
             vm = _NativeVM()
-            # Note: ctypes VM needs bytecode loading which requires more work
-            # For now, raise NotImplementedError
-            raise NotImplementedError(
-                "ctypes VM execution not yet fully implemented. "
-                "The VM C FFI needs to be exported in stoffel-vm (add 'pub mod cffi;' to lib.rs)."
-            )
-        except RuntimeError as e:
+            vm.load(bytecode)
+
+            if args:
+                return vm.execute_with_args(function_name, args)
+            return vm.execute(function_name)
+        except Exception as e:
             raise RuntimeError(f"Execution failed: {e}")
 
     raise NotImplementedError(

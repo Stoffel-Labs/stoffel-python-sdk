@@ -124,6 +124,15 @@ class CCompilationResult(Structure):
     ]
 
 
+class CBinaryResult(Structure):
+    """Binary compilation result structure"""
+    _fields_ = [
+        ("data", POINTER(c_uint8)),
+        ("len", c_size_t),
+        ("error", c_char_p),
+    ]
+
+
 # Opcode constants
 STOFFEL_OP_LD = 0
 STOFFEL_OP_LDI = 1
@@ -315,6 +324,18 @@ class NativeCompiler:
         self._lib.stoffel_free_compiled_program.argtypes = [POINTER(CCompiledProgram)]
         self._lib.stoffel_free_compiled_program.restype = None
 
+        # stoffel_compile_to_binary - compiles to VM-compatible binary format
+        self._lib.stoffel_compile_to_binary.argtypes = [
+            c_char_p,  # source
+            c_char_p,  # filename
+            POINTER(CCompilerOptions),  # options (nullable)
+        ]
+        self._lib.stoffel_compile_to_binary.restype = POINTER(CBinaryResult)
+
+        # stoffel_free_binary_result
+        self._lib.stoffel_free_binary_result.argtypes = [POINTER(CBinaryResult)]
+        self._lib.stoffel_free_binary_result.restype = None
+
     def get_version(self) -> str:
         """Get the compiler version string"""
         version = self._lib.stoffel_get_version()
@@ -335,7 +356,7 @@ class NativeCompiler:
             options: Compiler options
 
         Returns:
-            Compiled bytecode as bytes
+            Compiled bytecode as bytes (VM-compatible binary format)
 
         Raises:
             CompilationException: If compilation fails
@@ -351,8 +372,10 @@ class NativeCompiler:
         else:
             c_options_ptr = None
 
-        # Call compiler
-        result_ptr = self._lib.stoffel_compile(source_bytes, filename_bytes, c_options_ptr)
+        # Use stoffel_compile_to_binary for VM-compatible output
+        result_ptr = self._lib.stoffel_compile_to_binary(
+            source_bytes, filename_bytes, c_options_ptr
+        )
 
         if not result_ptr:
             raise RuntimeError("Compiler returned null result")
@@ -360,28 +383,24 @@ class NativeCompiler:
         try:
             result = result_ptr.contents
 
-            # Check for compilation errors
-            if not result.success:
-                errors = []
-                if result.errors.count > 0 and result.errors.errors:
-                    for i in range(result.errors.count):
-                        c_error = result.errors.errors[i]
-                        errors.append(CompilerError.from_c_error(c_error))
-
-                error_messages = [e.message for e in errors]
+            # Check for error
+            if result.error:
+                error_msg = result.error.decode("utf-8")
                 raise CompilationException(
-                    f"Compilation failed: {'; '.join(error_messages)}",
-                    errors
+                    f"Compilation failed: {error_msg}",
+                    []
                 )
 
-            # Extract bytecode from the compiled program
-            bytecode = self._extract_bytecode(result.program.contents)
-
-            return bytecode
+            # Extract bytecode bytes
+            if result.data and result.len > 0:
+                bytecode = bytes(result.data[:result.len])
+                return bytecode
+            else:
+                raise RuntimeError("Compiler produced empty bytecode")
 
         finally:
             # Free the result
-            self._lib.stoffel_free_compilation_result(result_ptr)
+            self._lib.stoffel_free_binary_result(result_ptr)
 
     def _extract_bytecode(self, program: CCompiledProgram) -> bytes:
         """
