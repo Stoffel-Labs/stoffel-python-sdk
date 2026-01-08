@@ -381,8 +381,8 @@ class StoffelServer:
         self._state = ServerState.STARTING
         logger.info(f"Server {self._party_id} starting on {self._bind_address}")
 
-        # Initialize network
-        self._network = QUICNetwork()
+        # Initialize network with party_id for proper MPC connection mapping
+        self._network = QUICNetwork(party_id=self._party_id)
         await self._network.init()
 
         # Start listening

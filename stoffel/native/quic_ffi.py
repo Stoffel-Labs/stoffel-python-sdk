@@ -73,6 +73,13 @@ class QUICFunctions:
         ]
         lib.new_quic_network.restype = POINTER(QuicNetworkOpaque)
 
+        # new_quic_network_with_party_id - Create QUIC network with specific party ID
+        lib.new_quic_network_with_party_id.argtypes = [
+            c_size_t,  # party_id
+            POINTER(POINTER(QuicPeerConnectionsOpaque)),  # returned_connections
+        ]
+        lib.new_quic_network_with_party_id.restype = POINTER(QuicNetworkOpaque)
+
         # quic_connect - Connect to a peer
         lib.quic_connect.argtypes = [
             POINTER(QuicNetworkOpaque),       # quic_network_ptr
@@ -173,6 +180,33 @@ class QUICFunctions:
 
         connections_ptr = POINTER(QuicPeerConnectionsOpaque)()
         network_ptr = self._lib.new_quic_network(ctypes.byref(connections_ptr))
+
+        return network_ptr, connections_ptr
+
+    def new_quic_network_with_party_id(
+        self,
+        party_id: int
+    ) -> Tuple[POINTER(QuicNetworkOpaque), POINTER(QuicPeerConnectionsOpaque)]:
+        """
+        Create a new QUIC network instance with a specific party ID
+
+        This is essential for MPC operations where parties need consistent IDs.
+        The party_id will be used in handshakes and for connection lookups.
+
+        Args:
+            party_id: The party ID for this network node (e.g., 0, 1, 2, etc.)
+
+        Returns:
+            Tuple of (QuicNetwork pointer, PeerConnections pointer)
+        """
+        if not self.available:
+            raise LibraryLoadError("MPC library not available")
+
+        connections_ptr = POINTER(QuicPeerConnectionsOpaque)()
+        network_ptr = self._lib.new_quic_network_with_party_id(
+            party_id,
+            ctypes.byref(connections_ptr)
+        )
 
         return network_ptr, connections_ptr
 

@@ -88,7 +88,8 @@ class QUICNetwork:
 
     Example:
         async def main():
-            network = QUICNetwork()
+            # For MPC, use party_id to ensure proper connection mapping
+            network = QUICNetwork(party_id=0)
             await network.init()
 
             # Connect to peer
@@ -103,15 +104,19 @@ class QUICNetwork:
             network.close()
     """
 
-    def __init__(self, max_workers: int = 4):
+    def __init__(self, party_id: Optional[int] = None, max_workers: int = 4):
         """
         Create QUIC network manager
 
         Args:
+            party_id: Party ID for MPC operations. If provided, ensures
+                     consistent ID mapping for HoneyBadger preprocessing.
+                     This is REQUIRED when using the network for MPC.
             max_workers: Max thread pool workers for concurrent FFI calls
         """
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._ffi = get_quic_ffi()
+        self._party_id = party_id
 
         self._network_ptr: Optional[POINTER(QuicNetworkOpaque)] = None
         self._connections_ptr: Optional[POINTER(QuicPeerConnectionsOpaque)] = None
@@ -157,8 +162,14 @@ class QUICNetwork:
         await loop.run_in_executor(self._executor, self._ffi.init_tls)
 
         # Create network and connections (blocking, run in executor)
-        def _create_network():
-            return self._ffi.new_quic_network()
+        # Use party_id version for MPC operations to ensure proper ID mapping
+        if self._party_id is not None:
+            def _create_network():
+                return self._ffi.new_quic_network_with_party_id(self._party_id)
+            logger.debug(f"Creating QUIC network with party_id={self._party_id}")
+        else:
+            def _create_network():
+                return self._ffi.new_quic_network()
 
         self._network_ptr, self._connections_ptr = await loop.run_in_executor(
             self._executor, _create_network
