@@ -75,6 +75,11 @@ from .compiler_ffi import (
     CompilationError,
 )
 
+# Native implementations (from PRs #3 and #4)
+from .vm import NativeVM
+from .compiler import NativeCompiler
+from .mpc import NativeShareManager, ShareType as NativeShareType, FieldKind as NativeFieldKind
+
 __all__ = [
     # Library loading
     "is_native_available",
@@ -142,4 +147,11 @@ __all__ = [
     "CompilerOptions",
     "CompilerError",
     "CompilationError",
+
+    # Native implementations (from PRs #3 and #4)
+    "NativeVM",
+    "NativeCompiler",
+    "NativeShareManager",
+    "NativeShareType",
+    "NativeFieldKind",
 ]
