@@ -350,7 +350,16 @@ class HoneyBadgerMpcEngine:
             raise ValueError(f"party_id {party_id} >= n_parties {n_parties}")
 
         # Create the engine
-        network = c_void_p(network_ptr) if network_ptr else None
+        # Handle network pointer - can be ctypes pointer or integer
+        if network_ptr is None:
+            network = None
+        elif hasattr(network_ptr, 'contents'):
+            # It's a ctypes pointer - cast to void pointer
+            network = ctypes.cast(network_ptr, c_void_p)
+        else:
+            # Assume it's an integer address
+            network = c_void_p(network_ptr)
+
         self._handle = self._ffi._lib.hb_engine_new(
             instance_id,
             party_id,

@@ -134,6 +134,14 @@ class QUICFunctions:
         lib.free_bytes_slice.argtypes = [ByteSlice]
         lib.free_bytes_slice.restype = None
 
+        # extract_quic_network - Extract raw QuicNetworkManager for StoffelVM
+        lib.extract_quic_network.argtypes = [POINTER(NetworkOpaque)]
+        lib.extract_quic_network.restype = c_void_p
+
+        # free_raw_quic_network - Free extracted QuicNetworkManager
+        lib.free_raw_quic_network.argtypes = [c_void_p]
+        lib.free_raw_quic_network.restype = None
+
     def init_tls(self) -> None:
         """
         Initialize TLS crypto provider for QUIC
@@ -272,6 +280,39 @@ class QUICFunctions:
         # Create pointer to pointer for consumption
         ptr_holder = ctypes.pointer(network_ptr)
         return self._lib.quic_into_hb_network(ptr_holder)
+
+    def extract_quic_network(self, network_ptr: POINTER(NetworkOpaque)) -> c_void_p:
+        """
+        Extract raw QuicNetworkManager for StoffelVM compatibility
+
+        This extracts the Arc<QuicNetworkManager> from NetworkOpaque and
+        returns it as a raw pointer that matches what StoffelVM's
+        hb_engine_new() expects.
+
+        Args:
+            network_ptr: Generic network handle (from quic_into_hb_network)
+
+        Returns:
+            Raw pointer to Arc<QuicNetworkManager> for StoffelVM
+
+        Note:
+            The returned pointer must be freed with free_raw_quic_network().
+            The original network_ptr remains valid.
+        """
+        if not self.available:
+            raise LibraryLoadError("MPC library not available")
+
+        return self._lib.extract_quic_network(network_ptr)
+
+    def free_raw_quic_network(self, ptr: c_void_p) -> None:
+        """
+        Free a raw QuicNetworkManager pointer
+
+        Args:
+            ptr: Pointer obtained from extract_quic_network()
+        """
+        if self.available and ptr:
+            self._lib.free_raw_quic_network(ptr)
 
     def quic_send(
         self,

@@ -8,8 +8,8 @@ the event loop.
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from ctypes import POINTER
-from typing import Optional, Set, Dict
+from ctypes import POINTER, c_void_p
+from typing import Optional, Set, Dict, Union
 import logging
 
 from .quic_ffi import get_quic_ffi, is_quic_available
@@ -116,6 +116,7 @@ class QUICNetwork:
         self._network_ptr: Optional[POINTER(QuicNetworkOpaque)] = None
         self._connections_ptr: Optional[POINTER(QuicPeerConnectionsOpaque)] = None
         self._hb_network_ptr: Optional[POINTER(NetworkOpaque)] = None
+        self._stoffelvm_network_ptr: Optional[c_void_p] = None
 
         self._connections: Dict[str, QUICConnection] = {}
         self._initialized = False
@@ -305,34 +306,42 @@ class QUICNetwork:
 
         return data
 
-    def get_hb_network(self) -> POINTER(NetworkOpaque):
+    def get_hb_network(self) -> Optional[c_void_p]:
         """
-        Get HoneyBadger-compatible network handle
+        Get StoffelVM-compatible network handle for HoneyBadger MPC
 
-        Converts the QUIC network to a generic network handle
-        suitable for HoneyBadger MPC operations.
+        Converts the QUIC network to a raw pointer format that matches
+        what StoffelVM's hb_engine_new() expects.
 
         Note: This consumes the QUIC network. After calling this,
         you should not use the connect/listen/send/receive methods
         directly - the network is now managed by HoneyBadger.
 
         Returns:
-            NetworkOpaque pointer for HoneyBadger MPC
+            Raw c_void_p pointer for StoffelVM's HoneyBadger engine,
+            or None if extraction fails
 
         Raises:
-            RuntimeError: If already converted or not initialized
+            RuntimeError: If not initialized
         """
-        if self._hb_network_ptr is not None:
-            return self._hb_network_ptr
+        # Return cached pointer if already extracted
+        if self._stoffelvm_network_ptr is not None:
+            return self._stoffelvm_network_ptr
 
         if not self._initialized:
             raise RuntimeError("Network not initialized - call init() first")
 
-        self._hb_network_ptr = self._ffi.quic_into_hb_network(self._network_ptr)
-        self._network_ptr = None  # Consumed
+        # First convert QUIC to NetworkOpaque if not done yet
+        if self._hb_network_ptr is None:
+            self._hb_network_ptr = self._ffi.quic_into_hb_network(self._network_ptr)
+            self._network_ptr = None  # Consumed
+            logger.debug("Converted to HoneyBadger network")
 
-        logger.debug("Converted to HoneyBadger network")
-        return self._hb_network_ptr
+        # Extract raw Arc<QuicNetworkManager> for StoffelVM
+        self._stoffelvm_network_ptr = self._ffi.extract_quic_network(self._hb_network_ptr)
+        logger.debug("Extracted StoffelVM-compatible network pointer")
+
+        return self._stoffelvm_network_ptr
 
     def close(self) -> None:
         """
@@ -349,6 +358,11 @@ class QUICNetwork:
         self._connections.clear()
 
         # Free native resources
+        # First free the extracted StoffelVM pointer if allocated
+        if self._stoffelvm_network_ptr is not None:
+            self._ffi.free_raw_quic_network(self._stoffelvm_network_ptr)
+            self._stoffelvm_network_ptr = None
+
         if self._hb_network_ptr is not None:
             # HB network owns the resources now, don't free QUIC handles
             # The HB network will be freed when the MPC client/server is freed

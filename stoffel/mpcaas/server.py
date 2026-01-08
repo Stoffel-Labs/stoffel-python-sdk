@@ -393,10 +393,20 @@ class StoffelServer:
         self._state = ServerState.CONNECTING_PEERS
         await self._connect_to_peers()
 
-        # Create HoneyBadger MPC engine
+        # Create HoneyBadger MPC engine if available
+        # The network.get_hb_network() method extracts a StoffelVM-compatible
+        # Arc<QuicNetworkManager> pointer from the mpc-protocols NetworkOpaque.
         if is_hb_engine_available():
             try:
-                network_handle = self._network.handle if hasattr(self._network, 'handle') else None
+                # Convert QUIC network to HoneyBadger-compatible network handle
+                if self._network:
+                    network_handle = self._network.get_hb_network()
+                else:
+                    network_handle = None
+
+                if network_handle is None:
+                    raise RuntimeError("Network handle required for HoneyBadger engine")
+
                 self._engine = HoneyBadgerMpcEngine(
                     instance_id=self._instance_id,
                     party_id=self._party_id,
@@ -410,8 +420,11 @@ class StoffelServer:
             except HBEngineError as e:
                 logger.warning(f"Failed to create HoneyBadger engine: {e}")
                 logger.warning("Falling back to simulated MPC")
+            except RuntimeError as e:
+                logger.warning(f"Failed to create HoneyBadger engine: {e}")
+                logger.warning("Falling back to simulated MPC")
         else:
-            logger.warning("HoneyBadger FFI not available, using simulated MPC")
+            logger.info("Using simulated MPC (HoneyBadger engine not available)")
 
         # Wait for preprocessing start time if set
         if self._preprocessing_start_time:
