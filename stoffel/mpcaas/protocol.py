@@ -65,6 +65,7 @@ class ComputationTrigger:
 class ComputationComplete:
     """Computation complete notification"""
     session_id: int
+    output_shares: Optional[bytes] = None  # Serialized output shares for this client
 
 
 @dataclass
@@ -197,10 +198,17 @@ def _serialize_payload(msg: MPCaaSMessage) -> bytes:
             _serialize_u64(msg.session_id)
         )
     elif isinstance(msg, ComputationComplete):
-        return (
+        payload = (
             _serialize_u32(MessageVariant.COMPUTATION_COMPLETE) +
             _serialize_u64(msg.session_id)
         )
+        # Optional output_shares field
+        if msg.output_shares is not None:
+            payload += struct.pack('<B', 1)  # Some variant
+            payload += _serialize_bytes(msg.output_shares)
+        else:
+            payload += struct.pack('<B', 0)  # None variant
+        return payload
     elif isinstance(msg, HoneyBadgerPayload):
         return (
             _serialize_u32(MessageVariant.HONEY_BADGER) +
@@ -245,7 +253,14 @@ def _deserialize_payload(data: bytes) -> MPCaaSMessage:
 
     elif variant == MessageVariant.COMPUTATION_COMPLETE:
         session_id, offset = _deserialize_u64(data, offset)
-        return ComputationComplete(session_id)
+        # Deserialize optional output_shares
+        output_shares = None
+        if offset < len(data):
+            has_shares = struct.unpack_from('<B', data, offset)[0]
+            offset += 1
+            if has_shares == 1:
+                output_shares, offset = _deserialize_bytes(data, offset)
+        return ComputationComplete(session_id, output_shares)
 
     elif variant == MessageVariant.HONEY_BADGER:
         payload, offset = _deserialize_bytes(data, offset)

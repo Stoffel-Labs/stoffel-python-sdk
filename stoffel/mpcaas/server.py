@@ -4,34 +4,35 @@ Stoffel MPC Server
 Provides the server API for running Stoffel MPC compute nodes.
 Matches the Rust SDK's StoffelServer API.
 
-IMPORTANT: STUB IMPLEMENTATION
-==============================
+IMPLEMENTATION STATUS
+=====================
 
-This server is currently a STUB. The actual MPC operations are simulated
-because the required FFI exports do not exist yet.
+This server uses HoneyBadgerMpcEngine FFI bindings for real MPC operations
+when the native library is available. If the native library is not found,
+it falls back to simulated MPC for testing.
 
-The Rust SDK uses `HoneyBadgerMpcEngine` from StoffelVM directly as a Rust
-library. For Python SDK server support, these functions need to be added to
-StoffelVM's C FFI layer.
-
-**Blocked By:** Linear issue STO-356
+**Resolved:** Linear issue STO-356
     "[StoffelVM] Add HoneyBadgerMpcEngine C FFI Exports for SDK Language Bindings"
 
-**What Works:**
+**What Works (with native library):**
 - QUIC networking (connection, send/receive)
 - Protocol message serialization/deserialization
 - Client connection handling
 - Message routing between clients and servers
+- HoneyBadger preprocessing (Beaver triple generation)
+- MPC secure computation infrastructure
+- Client output share retrieval
+- VM-MPC integration (bytecode execution with MPC callbacks)
+- Secure multiplication via engine.multiply()
+- Output reconstruction via engine.open()
 
-**What's Simulated:**
-- Preprocessing (Beaver triple generation)
-- MPC multiplication (secure computation)
-- Output reconstruction
+**Requirements:**
+- Build stoffel-vm with: `cargo build --release` in external/stoffel-vm
+- The native library (libstoffel_vm.dylib/.so) must be in library path
 
-Once STO-356 is implemented, the following methods need to be updated:
-- _run_preprocessing() - Use hb_engine_start_async()
-- _maybe_start_computation() - Use hb_engine_multiply_share_async()
-- Client output handling - Use hb_engine_open_share()
+**Fallback Mode:**
+When the native library is unavailable, MPC operations are simulated
+with placeholder delays for testing purposes.
 
 Example:
     # Create and start server
@@ -69,6 +70,12 @@ from .protocol import (
 )
 from ..native.network import QUICNetwork, QUICConnection
 from ..native.errors import NetworkError
+from ..native.hb_engine_ffi import (
+    HoneyBadgerMpcEngine,
+    HBEngineError,
+    ShareTypeKind,
+    is_hb_engine_available,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -332,6 +339,9 @@ class StoffelServer:
         self._running = False
         self._preprocessing_done = False
 
+        # HoneyBadger MPC engine (created in start())
+        self._engine: Optional[HoneyBadgerMpcEngine] = None
+
     @staticmethod
     def builder(party_id: int) -> StoffelServerBuilder:
         """Create a new server builder"""
@@ -382,6 +392,26 @@ class StoffelServer:
         # Connect to higher-ID peers (to avoid duplicate connections)
         self._state = ServerState.CONNECTING_PEERS
         await self._connect_to_peers()
+
+        # Create HoneyBadger MPC engine
+        if is_hb_engine_available():
+            try:
+                network_handle = self._network.handle if hasattr(self._network, 'handle') else None
+                self._engine = HoneyBadgerMpcEngine(
+                    instance_id=self._instance_id,
+                    party_id=self._party_id,
+                    n_parties=self._n_parties,
+                    threshold=self._threshold,
+                    n_triples=self._n_triples,
+                    n_random=self._n_random_shares,
+                    network_ptr=network_handle,
+                )
+                logger.info(f"HoneyBadger engine created for party {self._party_id}")
+            except HBEngineError as e:
+                logger.warning(f"Failed to create HoneyBadger engine: {e}")
+                logger.warning("Falling back to simulated MPC")
+        else:
+            logger.warning("HoneyBadger FFI not available, using simulated MPC")
 
         # Wait for preprocessing start time if set
         if self._preprocessing_start_time:
@@ -435,22 +465,26 @@ class StoffelServer:
     async def _run_preprocessing(self) -> None:
         """Run HoneyBadger preprocessing (Beaver triple generation)
 
-        STUB: This method is simulated. Once STO-356 is implemented, this should:
-            1. Create HBEngine via hb_engine_new()
-            2. Call hb_engine_start_async() to run preprocessing
-            3. Store the engine handle for later use in computation
-
-        See: stoffel/native/hb_engine_ffi.py (to be created after STO-356)
+        Uses HoneyBadgerMpcEngine FFI when available, falls back to simulation.
         """
         logger.info(f"Running preprocessing: {self._n_triples} triples, {self._n_random_shares} random shares")
 
-        # STUB: Simulated preprocessing - no actual Beaver triple generation
-        # Real implementation requires HoneyBadgerMpcEngine FFI (STO-356)
-        logger.warning("STUB: Preprocessing is simulated, no real cryptographic material generated")
-        await asyncio.sleep(5)
-
-        self._preprocessing_done = True
-        logger.info("Preprocessing complete")
+        if self._engine is not None:
+            # Use real HoneyBadger engine for preprocessing
+            try:
+                logger.info("Starting HoneyBadger preprocessing via FFI...")
+                self._engine.start_preprocessing()
+                self._preprocessing_done = True
+                logger.info("HoneyBadger preprocessing complete")
+            except HBEngineError as e:
+                logger.error(f"Preprocessing failed: {e}")
+                raise RuntimeError(f"Preprocessing failed: {e}")
+        else:
+            # Fallback: Simulated preprocessing (for testing without native library)
+            logger.warning("STUB: Preprocessing is simulated, no real cryptographic material generated")
+            await asyncio.sleep(2)  # Shorter delay for testing
+            self._preprocessing_done = True
+            logger.info("Simulated preprocessing complete")
 
     async def run_forever(self) -> None:
         """
@@ -546,7 +580,14 @@ class StoffelServer:
         elif isinstance(msg, HoneyBadgerPayload):
             # Process HoneyBadger protocol message
             logger.debug(f"Received HoneyBadger payload from client {handler.client_id}")
-            # TODO: Process via FFI
+            # Note: HoneyBadger protocol messages are typically server-to-server
+            # Client-sent payloads are forwarded input shares
+            if self._engine is not None and msg.data:
+                # Store as client input shares for later initialization
+                if not hasattr(handler, 'input_shares'):
+                    handler.input_shares = b''
+                handler.input_shares = msg.data
+                logger.debug(f"Stored input shares from client {handler.client_id}")
 
         else:
             logger.warning(f"Unexpected message from client: {type(msg).__name__}")
@@ -554,12 +595,7 @@ class StoffelServer:
     async def _maybe_start_computation(self) -> None:
         """Check if we can start computation and trigger if ready
 
-        STUB: The computation is simulated. Once STO-356 is implemented:
-            1. Use hb_engine_multiply_share_async() for secure multiplication
-            2. Use hb_node_process() to handle MPC protocol messages
-            3. Use hb_engine_open_share() for output reconstruction
-
-        See: stoffel/native/hb_engine_ffi.py (to be created after STO-356)
+        Uses HoneyBadgerMpcEngine FFI when available for real MPC operations.
         """
         if not self._preprocessing_done:
             return
@@ -567,19 +603,36 @@ class StoffelServer:
         # Check if all expected clients are ready
         ready_clients = [h for h in self._clients.values() if h.ready]
 
-        if ready_clients:
-            self._state = ServerState.COMPUTING
-            logger.info(f"Starting computation with {len(ready_clients)} clients")
+        if not ready_clients:
+            return
 
-            # STUB: Simulated computation - no actual MPC execution
-            # Real implementation requires HoneyBadgerMpcEngine FFI (STO-356)
-            logger.warning("STUB: Computation is simulated, no real secure multiparty computation")
-            await asyncio.sleep(2)
+        self._state = ServerState.COMPUTING
+        logger.info(f"Starting computation with {len(ready_clients)} clients")
+
+        try:
+            if self._engine is not None:
+                # Real MPC computation using HoneyBadger engine
+                await self._run_mpc_computation(ready_clients)
+            else:
+                # Fallback: Simulated computation
+                logger.warning("STUB: Computation is simulated, no real secure multiparty computation")
+                await asyncio.sleep(1)
 
             # Send ComputationComplete to all clients
-            complete = ComputationComplete(session_id=self._instance_id)
             for handler in ready_clients:
                 try:
+                    # Get output shares for this client if engine available
+                    output_shares = None
+                    if self._engine is not None:
+                        try:
+                            output_shares = self._engine.get_client_shares(handler.client_id)
+                        except HBEngineError as e:
+                            logger.warning(f"Could not get shares for client {handler.client_id}: {e}")
+
+                    complete = ComputationComplete(
+                        session_id=self._instance_id,
+                        output_shares=output_shares,
+                    )
                     await handler.connection.send(serialize_message(complete))
                     logger.debug(f"Sent ComputationComplete to client {handler.client_id}")
                 except Exception as e:
@@ -588,11 +641,130 @@ class StoffelServer:
             self._state = ServerState.READY
             logger.info("Computation complete")
 
+        except HBEngineError as e:
+            logger.error(f"MPC computation failed: {e}")
+            # Send error to clients
+            for handler in ready_clients:
+                try:
+                    error = ErrorMessage(code=ErrorCode.INTERNAL_ERROR, message=str(e))
+                    await handler.connection.send(serialize_message(error))
+                except Exception:
+                    pass
+            self._state = ServerState.READY
+
+    async def _run_mpc_computation(self, ready_clients: List[ClientHandler]) -> None:
+        """Execute the actual MPC computation using HoneyBadger engine
+
+        This method:
+        1. Creates a VM with MPC foreign function callbacks
+        2. Loads the program bytecode
+        3. Initializes client inputs in the engine
+        4. Executes the program with MPC semantics (multiply/output via engine)
+        5. Sends output shares to clients
+        """
+        if self._engine is None:
+            raise RuntimeError("Engine not initialized")
+
+        logger.info("Running HoneyBadger MPC computation...")
+
+        # Import here to avoid circular imports
+        from .mpc_vm import VMWithMPC, is_mpc_vm_available
+
+        # Check if MPC VM execution is available
+        if not is_mpc_vm_available():
+            logger.warning(
+                "MPC VM execution not available (missing native libraries). "
+                "Falling back to simulated computation."
+            )
+            # Fallback: just verify engine is ready
+            if self._engine.is_ready():
+                logger.info("HoneyBadger engine ready (simulation mode)")
+            return
+
+        # Get bytecode from program
+        bytecode = self._get_program_bytecode()
+        if bytecode is None:
+            logger.warning("No program bytecode available, skipping computation")
+            return
+
+        # Create MPC-aware VM
+        mpc_vm = VMWithMPC(self._engine)
+
+        try:
+            # Setup VM with bytecode and register MPC foreign functions
+            mpc_vm.setup(bytecode)
+
+            # Initialize client inputs
+            for handler in ready_clients:
+                if hasattr(handler, 'input_shares') and handler.input_shares:
+                    # Parse input shares - assume they're concatenated bytes
+                    # Each share is 8 bytes (64-bit)
+                    share_size = 8
+                    shares_data = handler.input_shares
+                    shares = [
+                        shares_data[i:i+share_size]
+                        for i in range(0, len(shares_data), share_size)
+                        if i + share_size <= len(shares_data)
+                    ]
+                    if shares:
+                        mpc_vm.set_client_inputs(handler.client_id, shares)
+                        logger.debug(
+                            f"Initialized {len(shares)} inputs for client {handler.client_id}"
+                        )
+
+            # Execute with MPC semantics
+            logger.info("Executing program with MPC operations...")
+            result = mpc_vm.execute("main")
+            logger.info(f"MPC computation result: {result}")
+
+            # Send output shares to clients
+            for handler in ready_clients:
+                try:
+                    output_shares = self._engine.get_client_shares(handler.client_id)
+                    complete = ComputationComplete(
+                        session_id=self._instance_id,
+                        output_shares=output_shares,
+                    )
+                    await handler.connection.send(serialize_message(complete))
+                    logger.debug(f"Sent output shares to client {handler.client_id}")
+                except HBEngineError as e:
+                    logger.warning(f"Failed to get shares for client {handler.client_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"MPC computation failed: {e}")
+            # Send error to clients
+            for handler in ready_clients:
+                error_msg = ErrorMessage(
+                    code=ErrorCode.INTERNAL_ERROR,
+                    message=f"Computation failed: {str(e)}",
+                )
+                await handler.connection.send(serialize_message(error_msg))
+            raise
+
+        logger.info("MPC computation phase complete")
+
+    def _get_program_bytecode(self) -> Optional[bytes]:
+        """Get bytecode from the program (handles both bytes and program objects)"""
+        if self._program is None:
+            return None
+        if isinstance(self._program, bytes):
+            return self._program
+        if hasattr(self._program, 'bytecode'):
+            bc = self._program.bytecode
+            return bc() if callable(bc) else bc
+        return None
+
     async def shutdown(self) -> None:
         """Gracefully shutdown the server"""
         self._running = False
         self._state = ServerState.SHUTTING_DOWN
         logger.info(f"Server {self._party_id} shutting down...")
+
+        # Free HoneyBadger engine resources
+        if self._engine is not None:
+            logger.debug("Freeing HoneyBadger engine resources")
+            del self._engine
+            self._engine = None
 
         # Close client connections
         for handler in self._clients.values():

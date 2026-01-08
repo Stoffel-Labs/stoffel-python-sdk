@@ -139,11 +139,19 @@ class QUICFunctions:
         Initialize TLS crypto provider for QUIC
 
         Must be called before creating any QUIC network.
-        Safe to call multiple times (idempotent on Rust side).
+        Safe to call multiple times - this wrapper ensures idempotency
+        since the underlying Rust code panics if called twice.
         """
+        # Guard against multiple calls - rustls only allows installing
+        # the crypto provider once per process
+        if getattr(self, '_tls_initialized', False):
+            return  # Already initialized, skip
+
         if not self.available:
             raise LibraryLoadError("MPC library not available")
+
         self._lib.init_tls()
+        self._tls_initialized = True
 
     def new_quic_network(self) -> Tuple[POINTER(QuicNetworkOpaque), POINTER(QuicPeerConnectionsOpaque)]:
         """

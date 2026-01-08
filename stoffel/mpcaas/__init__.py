@@ -32,6 +32,11 @@ from .server import (
     ServerState,
 )
 
+from .mpc_vm import (
+    VMWithMPC,
+    is_mpc_vm_available,
+)
+
 __all__ = [
     # Protocol
     "MPCaaSMessage",
@@ -52,4 +57,8 @@ __all__ = [
     "StoffelServer",
     "StoffelServerBuilder",
     "ServerState",
+
+    # VM-MPC Integration
+    "VMWithMPC",
+    "is_mpc_vm_available",
 ]

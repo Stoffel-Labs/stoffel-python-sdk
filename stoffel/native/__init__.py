@@ -80,6 +80,31 @@ from .vm import NativeVM
 from .compiler import NativeCompiler
 from .mpc import NativeShareManager, ShareType as NativeShareType, FieldKind as NativeFieldKind
 
+# HoneyBadger MPC Engine FFI (STO-356)
+from .hb_engine_ffi import (
+    HBEngineFFI,
+    HBEngineErrorCode,
+    HBEngineError,
+    HoneyBadgerMpcEngine,
+    ShareTypeKind,
+    get_hb_engine_ffi,
+    is_hb_engine_available,
+)
+
+# Stoffel Networking FFI
+from .network_ffi import (
+    NetworkFFI,
+    StoffelNetError,
+    ConnectionState,
+    NetworkError,
+    TokioRuntime,
+    NetworkNode,
+    NetworkManager,
+    PeerConnection,
+    get_network_ffi,
+    is_network_available,
+)
+
 __all__ = [
     # Library loading
     "is_native_available",
@@ -154,4 +179,25 @@ __all__ = [
     "NativeShareManager",
     "NativeShareType",
     "NativeFieldKind",
+
+    # HoneyBadger MPC Engine (STO-356)
+    "HBEngineFFI",
+    "HBEngineErrorCode",
+    "HBEngineError",
+    "HoneyBadgerMpcEngine",
+    "ShareTypeKind",
+    "get_hb_engine_ffi",
+    "is_hb_engine_available",
+
+    # Stoffel Networking
+    "NetworkFFI",
+    "StoffelNetError",
+    "ConnectionState",
+    "NetworkError",
+    "TokioRuntime",
+    "NetworkNode",
+    "NetworkManager",
+    "PeerConnection",
+    "get_network_ffi",
+    "is_network_available",
 ]
