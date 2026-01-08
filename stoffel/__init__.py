@@ -6,20 +6,37 @@ A clean Python SDK for the Stoffel framework, providing:
 - MPC network client for secure computations
 - MPCaaS (MPC as a Service) client-server architecture
 
-Simple usage (MPCaaS - recommended):
+Recommended usage (Rust SDK-compatible API):
+    from stoffel import Stoffel, ProtocolType, ShareType
+
+    # Compile and configure MPC
+    runtime = Stoffel.compile("fn main() { return 42; }") \\
+        .parties(5) \\
+        .threshold(1) \\
+        .protocol(ProtocolType.HONEYBADGER) \\
+        .build()
+
+    # Access program and config
+    print(runtime.program)       # bytes
+    print(runtime.mpc_config)    # MPCConfig
+
+    # Quick local execution
+    result = Stoffel.compile(source).execute_local()
+
+MPCaaS usage:
     from stoffel import StoffelClient, StoffelServer
 
     # Client API - for app developers
-    client = await StoffelClient.builder() \
-        .with_servers(["server1:19200", "server2:19200"]) \
+    client = await StoffelClient.builder() \\
+        .with_servers(["server1:19200", "server2:19200"]) \\
         .connect()
     result = await client.run([42, 100])
 
     # Server API - for infrastructure operators
-    server = StoffelServer.builder(party_id=0) \
-        .bind("0.0.0.0:19200") \
-        .with_peers([(1, "127.0.0.1:19201")]) \
-        .with_instance_id(12345) \
+    server = StoffelServer.builder(party_id=0) \\
+        .bind("0.0.0.0:19200") \\
+        .with_peers([(1, "127.0.0.1:19201")]) \\
+        .with_instance_id(12345) \\
         .build()
     await server.start()
     await server.run_forever()
@@ -34,7 +51,25 @@ Legacy usage:
 __version__ = "0.1.0"
 __author__ = "Stoffel Labs"
 
-# MPCaaS API (recommended)
+# Core API (Rust SDK-compatible)
+from .stoffel import Stoffel, StoffelBuilder
+from .runtime import StoffelRuntime, MPCConfig
+from .enums import ProtocolType, ShareType, OptimizationLevel
+from .error import (
+    StoffelError,
+    CompilationError,
+    StoffelRuntimeError,
+    MPCError,
+    ConfigurationError,
+    NetworkError,
+    InvalidInputError,
+    FunctionNotFoundError,
+    PreprocessingError,
+    ComputationError,
+    IoError,
+)
+
+# MPCaaS API
 from .mpcaas import (
     StoffelClient,
     StoffelClientBuilder,
@@ -55,10 +90,33 @@ from .client import StoffelClient as LegacyStoffelClient
 # Core components for advanced usage
 from .compiler import StoffelCompiler, CompiledProgram
 from .vm import VirtualMachine
-from .mpc import MPCConfig, MPCProtocol
+from .mpc import MPCProtocol
+from .mpc import MPCConfig as LegacyMPCConfig  # Legacy config (use runtime.MPCConfig instead)
 
 __all__ = [
-    # MPCaaS API (recommended for most users)
+    # Core API (Rust SDK-compatible)
+    "Stoffel",                # Main entry point
+    "StoffelBuilder",         # Fluent builder for configuration
+    "StoffelRuntime",         # Compiled program + MPC config
+    "MPCConfig",              # MPC configuration dataclass
+    "ProtocolType",           # MPC protocol enum (HONEYBADGER)
+    "ShareType",              # Secret sharing enum (ROBUST, NON_ROBUST)
+    "OptimizationLevel",      # Compiler optimization enum
+
+    # Error types
+    "StoffelError",           # Base error class
+    "CompilationError",       # Compilation failures
+    "StoffelRuntimeError",    # VM execution errors
+    "MPCError",               # MPC protocol errors
+    "ConfigurationError",     # Invalid configuration
+    "NetworkError",           # Network communication errors
+    "InvalidInputError",      # Invalid input errors
+    "FunctionNotFoundError",  # Missing function errors
+    "PreprocessingError",     # MPC preprocessing errors
+    "ComputationError",       # MPC computation errors
+    "IoError",                # File I/O errors
+
+    # MPCaaS API
     "StoffelClient",          # MPCaaS client for app developers
     "StoffelClientBuilder",   # Builder for StoffelClient
     "ClientState",            # Client connection states
@@ -79,6 +137,5 @@ __all__ = [
     "StoffelCompiler",
     "CompiledProgram",
     "VirtualMachine",
-    "MPCConfig",
     "MPCProtocol",
 ]

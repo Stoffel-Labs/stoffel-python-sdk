@@ -6,13 +6,14 @@ enabling compilation of .stfl source files to VM bytecode and
 execution of compiled programs.
 """
 
-from .compiler import StoffelCompiler
+from .compiler import StoffelCompiler, CompilerOptions
 from .program import CompiledProgram, ProgramLoader
 from .exceptions import CompilerError, CompilationError, LoadError
 
 __all__ = [
     'StoffelCompiler',
-    'CompiledProgram', 
+    'CompilerOptions',
+    'CompiledProgram',
     'ProgramLoader',
     'CompilerError',
     'CompilationError',

@@ -14,7 +14,10 @@ from typing import Optional
 # ==============================================================================
 
 class HoneyBadgerErrorCode(IntEnum):
-    """Error codes for HoneyBadger MPC operations"""
+    """Error codes for HoneyBadger MPC operations
+
+    Must match: mpc-protocols/mpc/src/ffi/c_bindings/honey_badger_mpc_client/mod.rs
+    """
     SUCCESS = 0
     NETWORK_ERROR = 1
     RANSHA_ERROR = 2
@@ -31,6 +34,10 @@ class HoneyBadgerErrorCode(IntEnum):
     JOIN_ERROR = 13
     CHANNEL_CLOSED = 14
     OUTPUT_NOT_READY = 15
+    RANDBIT_ERROR = 16
+    PRAND_ERROR = 17
+    FPMUL_ERROR = 18
+    TRUNCPR_ERROR = 19
 
 
 class NetworkErrorCode(IntEnum):
@@ -142,6 +149,10 @@ HONEYBADGER_ERROR_MESSAGES = {
     HoneyBadgerErrorCode.JOIN_ERROR: "Task join error",
     HoneyBadgerErrorCode.CHANNEL_CLOSED: "Communication channel closed unexpectedly",
     HoneyBadgerErrorCode.OUTPUT_NOT_READY: "Output shares not yet available",
+    HoneyBadgerErrorCode.RANDBIT_ERROR: "Random bit generation error",
+    HoneyBadgerErrorCode.PRAND_ERROR: "Pseudo-random number generation error",
+    HoneyBadgerErrorCode.FPMUL_ERROR: "Fixed-point multiplication error",
+    HoneyBadgerErrorCode.TRUNCPR_ERROR: "Truncation protocol error",
 }
 
 NETWORK_ERROR_MESSAGES = {

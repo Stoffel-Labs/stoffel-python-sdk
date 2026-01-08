@@ -4,14 +4,43 @@ Stoffel MPC Server
 Provides the server API for running Stoffel MPC compute nodes.
 Matches the Rust SDK's StoffelServer API.
 
+IMPORTANT: STUB IMPLEMENTATION
+==============================
+
+This server is currently a STUB. The actual MPC operations are simulated
+because the required FFI exports do not exist yet.
+
+The Rust SDK uses `HoneyBadgerMpcEngine` from StoffelVM directly as a Rust
+library. For Python SDK server support, these functions need to be added to
+StoffelVM's C FFI layer.
+
+**Blocked By:** Linear issue STO-356
+    "[StoffelVM] Add HoneyBadgerMpcEngine C FFI Exports for SDK Language Bindings"
+
+**What Works:**
+- QUIC networking (connection, send/receive)
+- Protocol message serialization/deserialization
+- Client connection handling
+- Message routing between clients and servers
+
+**What's Simulated:**
+- Preprocessing (Beaver triple generation)
+- MPC multiplication (secure computation)
+- Output reconstruction
+
+Once STO-356 is implemented, the following methods need to be updated:
+- _run_preprocessing() - Use hb_engine_start_async()
+- _maybe_start_computation() - Use hb_engine_multiply_share_async()
+- Client output handling - Use hb_engine_open_share()
+
 Example:
     # Create and start server
-    server = Stoffel.server(party_id=0) \
-        .bind("0.0.0.0:19200") \
-        .with_peers([(1, "127.0.0.1:19201"), (2, "127.0.0.1:19202")]) \
-        .with_program(program) \
-        .with_preprocessing(3, 8) \
-        .with_instance_id(12345) \
+    server = Stoffel.server(party_id=0) \\
+        .bind("0.0.0.0:19200") \\
+        .with_peers([(1, "127.0.0.1:19201"), (2, "127.0.0.1:19202")]) \\
+        .with_program(program) \\
+        .with_preprocessing(3, 8) \\
+        .with_instance_id(12345) \\
         .build()
 
     await server.start()
@@ -404,11 +433,20 @@ class StoffelServer:
             await asyncio.sleep(wait_time)
 
     async def _run_preprocessing(self) -> None:
-        """Run HoneyBadger preprocessing (Beaver triple generation)"""
+        """Run HoneyBadger preprocessing (Beaver triple generation)
+
+        STUB: This method is simulated. Once STO-356 is implemented, this should:
+            1. Create HBEngine via hb_engine_new()
+            2. Call hb_engine_start_async() to run preprocessing
+            3. Store the engine handle for later use in computation
+
+        See: stoffel/native/hb_engine_ffi.py (to be created after STO-356)
+        """
         logger.info(f"Running preprocessing: {self._n_triples} triples, {self._n_random_shares} random shares")
 
-        # TODO: Implement actual preprocessing via FFI
-        # For now, simulate preprocessing time
+        # STUB: Simulated preprocessing - no actual Beaver triple generation
+        # Real implementation requires HoneyBadgerMpcEngine FFI (STO-356)
+        logger.warning("STUB: Preprocessing is simulated, no real cryptographic material generated")
         await asyncio.sleep(5)
 
         self._preprocessing_done = True
@@ -514,7 +552,15 @@ class StoffelServer:
             logger.warning(f"Unexpected message from client: {type(msg).__name__}")
 
     async def _maybe_start_computation(self) -> None:
-        """Check if we can start computation and trigger if ready"""
+        """Check if we can start computation and trigger if ready
+
+        STUB: The computation is simulated. Once STO-356 is implemented:
+            1. Use hb_engine_multiply_share_async() for secure multiplication
+            2. Use hb_node_process() to handle MPC protocol messages
+            3. Use hb_engine_open_share() for output reconstruction
+
+        See: stoffel/native/hb_engine_ffi.py (to be created after STO-356)
+        """
         if not self._preprocessing_done:
             return
 
@@ -525,9 +571,9 @@ class StoffelServer:
             self._state = ServerState.COMPUTING
             logger.info(f"Starting computation with {len(ready_clients)} clients")
 
-            # TODO: Run actual MPC computation via FFI
-
-            # Simulate computation
+            # STUB: Simulated computation - no actual MPC execution
+            # Real implementation requires HoneyBadgerMpcEngine FFI (STO-356)
+            logger.warning("STUB: Computation is simulated, no real secure multiparty computation")
             await asyncio.sleep(2)
 
             # Send ComputationComplete to all clients

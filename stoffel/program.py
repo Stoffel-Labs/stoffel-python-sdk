@@ -205,7 +205,7 @@ class StoffelProgram:
     def get_program_info(self) -> Dict[str, Any]:
         """
         Get information about the program
-        
+
         Returns:
             Program metadata and status
         """
@@ -218,6 +218,80 @@ class StoffelProgram:
             "expected_inputs": self.get_expected_inputs(),
             "execution_params": self.execution_params
         }
+
+    def bytecode(self) -> bytes:
+        """
+        Get raw program bytecode
+
+        Returns:
+            Raw bytecode bytes
+
+        Raises:
+            ValueError: If no binary path is set
+            FileNotFoundError: If binary file doesn't exist
+        """
+        if not self.binary_path:
+            raise ValueError("No binary path specified. Compile first or provide path.")
+
+        if not os.path.exists(self.binary_path):
+            raise FileNotFoundError(f"Binary file not found: {self.binary_path}")
+
+        return Path(self.binary_path).read_bytes()
+
+    def save(self, path: str) -> None:
+        """
+        Save program bytecode to file
+
+        Args:
+            path: File path to save bytecode to (typically .stfb extension)
+
+        Raises:
+            ValueError: If no bytecode available
+            IOError: If file cannot be written
+        """
+        bytecode_data = self.bytecode()
+        try:
+            Path(path).write_bytes(bytecode_data)
+        except Exception as e:
+            raise IOError(f"Failed to save bytecode to {path}: {e}")
+
+    def list_functions(self) -> List[str]:
+        """
+        Get list of available functions in the program
+
+        Returns:
+            List of function names available in the compiled program
+
+        Note:
+            Currently returns ["main"] as a placeholder. Full function
+            enumeration requires VM support for bytecode inspection.
+        """
+        # TODO: Implement proper function listing when VM supports it
+        # This would require parsing the bytecode or having the VM expose
+        # function metadata via FFI
+        return ["main"]
+
+    def execute_function(self, function_name: str, *args: Any) -> Any:
+        """
+        Execute a specific function in the program
+
+        Args:
+            function_name: Name of the function to execute
+            *args: Arguments to pass to the function
+
+        Returns:
+            Result of the function execution
+
+        Raises:
+            RuntimeError: If program not loaded
+        """
+        if not self.program_loaded:
+            raise RuntimeError("Program not loaded. Call load_program() first.")
+
+        if args:
+            return self.vm.execute_with_args(function_name, list(args))
+        else:
+            return self.vm.execute(function_name)
     
     def _generate_program_id(self, source_path: str) -> str:
         """
