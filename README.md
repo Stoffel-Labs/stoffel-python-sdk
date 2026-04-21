@@ -337,6 +337,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Stoffel VM](https://github.com/stoffel-labs/stoffel-vm) - The core virtual machine with MPC integration
 - [MPC Protocols](https://github.com/stoffel-labs/mpc-protocols) - Rust implementation of MPC protocols
 - [Stoffel Lang](https://github.com/stoffel-labs/stoffel-lang) - The programming language that compiles to Stoffel VM
+- [Stoffel MPC](https://stoffelmpc.com?utm_source=github&utm_medium=readme&utm_campaign=python-sdk-repo&utm_term=mpc) - Production-ready MPC for privacy-first applications
 
 ## Support
 
